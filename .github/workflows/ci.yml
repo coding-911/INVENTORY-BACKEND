@@ -1,0 +1,40 @@
+# Pull Request마다 형식 검사·빌드·전체 테스트 (docs/dev/tech-stack.md 2절 CI)
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # 같은 PR에 새 커밋이 오면 이전 실행을 멈춘다
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      # Gradle 캐시, Wrapper 검증
+      - uses: gradle/actions/setup-gradle@v6
+
+      # spotlessCheck, ModularityTest, Testcontainers(PostgreSQL 18) 테스트 포함
+      - run: ./gradlew build
+
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: build/reports/tests/test
+          retention-days: 7
