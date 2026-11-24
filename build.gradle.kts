@@ -32,12 +32,18 @@ dependencies {
     implementation("org.springframework.modulith:spring-modulith-starter-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
+    developmentOnly("org.springframework.boot:spring-boot-docker-compose")
 
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.bootRun {
+    // 개발 PC 실행은 local 프로필 (docker/compose.local.yml의 PostgreSQL을 함께 켠다)
+    systemProperty("spring.profiles.active", "local")
 }
 
 tasks.test {

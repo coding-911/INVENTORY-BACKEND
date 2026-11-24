@@ -22,6 +22,7 @@ Thumbs.db
 # 비밀 값 (docs/dev/tech-stack.md 3절: 비밀 값은 환경 변수·서버 .env에만)
 .env
 .env.*
+!.env.example
 
 # Claude Code 로컬 파일 (docs/dev/conventions.md 10절: CLAUDE.md는 Git에 올리지 않는다)
 CLAUDE.md

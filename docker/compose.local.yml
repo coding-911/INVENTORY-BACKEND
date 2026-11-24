@@ -1,0 +1,21 @@
+# 개발 PC 전용 PostgreSQL 18 (docs/dev/tech-stack.md 3절).
+# ./gradlew bootRun(local 프로필)으로 앱을 켜면 Spring Boot가 이 파일로 DB를 함께 켜고 접속 정보를 넣는다.
+# 서버용 compose(앱·Nginx 포함)는 배포 작업에서 따로 만든다.
+# 비밀번호는 docker/.env에서 읽는다(Git 제외). 처음 한 번 docker/.env.example을 복사해 만든다.
+name: asset-local
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: asset
+      POSTGRES_USER: asset
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?docker/.env.example을 docker/.env로 복사하고 비밀번호를 넣는다}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # PostgreSQL 18 이미지는 데이터를 /var/lib/postgresql/18/docker에 둔다. 상위 폴더를 붙인다
+      - asset-local-db:/var/lib/postgresql
+
+volumes:
+  asset-local-db:
