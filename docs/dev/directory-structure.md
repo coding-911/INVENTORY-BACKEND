@@ -214,17 +214,14 @@ resources/
 ├── application-local.yml      로컬 (docker-compose PostgreSQL)
 ├── application-prod.yml       운영 (환경 변수로 접속 정보 주입)
 └── db/migration/
-    ├── V1_000__create_schemas.sql
-    ├── V1_100__product_init.sql
-    ├── V1_200__warehouse_init.sql
-    ├── V1_300__inventory_init.sql
-    ├── V1_310__inventory_ledger_guard.sql    원장 UPDATE·DELETE 차단 트리거
-    ├── V1_400__partner_init.sql
+    ├── V1__baseline_v1.sql          docs/db/ddl/asset_v1_create.sql (스키마 15개, 테이블 54개, 원장 차단 트리거, 초기 데이터)
+    ├── V2__{모듈}_{설명}.sql
     └── ...
 ```
 
-- 파일명: `V{대버전}_{모듈 번호}{순번}__{모듈}_{설명}.sql`. 모듈 번호를 100 단위로 나눠 충돌을 줄인다.
-- 모듈별 PostgreSQL 스키마(`product`, `inventory` …)를 `V1_000`에서 만든다.
+- 파일명: `V{순번}__{모듈}_{설명}.sql`. 순번은 main에 합치는 순서대로 1씩 올리고, 모듈은 설명 앞에 쓴다(예: `V2__trash_add_xxx.sql`). 두 PR이 같은 순번을 쓰면 Flyway가 중복 버전으로 실패하므로 main을 합친 뒤 번호를 올린다. (2026-11-24 `V{대버전}_{모듈 번호}{순번}`에서 바꿈: 이미 적용된 큰 번호 뒤에 작은 모듈 번호를 더하면 Flyway가 순서 밖이라 거부한다)
+- `V1`은 `asset_v1_create.sql`을 `BEGIN;`/`COMMIT;`만 빼고 그대로 옮긴 것이다(Flyway가 파일마다 트랜잭션을 건다). 스키마끼리 외래 키가 서로 물려 있어(원장 ↔ 장비 이력 등) 모듈별 파일로 나누지 않는다 (2026-11-24).
+- 이미 main에 합친 마이그레이션은 고치지 않는다. 바꿀 것은 새 순번 파일로 넣는다. v2 제약(`asset_v2_constraints.sql`)도 서비스 테스트 뒤 새 순번으로 넣는다.
 - 애플리케이션 DB 계정에는 `inventory.ledger_entries`의 UPDATE·DELETE 권한을 주지 않는다 (HIST-02, NFR-08).
 - DB 접속 정보는 yml에 쓰지 않고 환경 변수로 넣는다 (NFR-01).
 
@@ -256,6 +253,6 @@ resources/
 
 1. `kr.co.unipoint.asset.{모듈}` 아래 `api/`, `web/`, `internal/`과 `package-info.java`를 만든다.
 2. `package-info.java`에 허용 의존 모듈을 선언한다.
-3. Flyway에 모듈 번호를 할당하고 스키마·테이블을 만든다.
+3. 새 순번의 Flyway 마이그레이션으로 스키마·테이블을 만든다(6절).
 4. 이 문서의 모듈 목록과 의존 규칙 표를 갱신한다.
 5. `ModularityTest`가 통과하는지 확인한다.
