@@ -15,7 +15,7 @@
     │   ├── CLAUDE.md        백엔드 규칙·명령·문서 안내 (로컬 전용, Git에 올리지 않음)
     │   ├── docs/            노션 설계 문서 사본, DDL, 점검 쿼리
     │   ├── tools/ddl/       DDL 생성·검증 도구 (설계 단계 참고용)
-    │   ├── docker/          docker-compose.yml, PostgreSQL 초기 설정
+    │   ├── docker/          compose.local.yml(개발 PC PostgreSQL), .env.example(비밀번호 틀, .env는 Git 제외). 서버용 compose는 배포 작업에서 (2026-11-24)
     │   ├── deploy/          deploy.sh (백엔드 기술 스택 3.1)
     │   └── build.gradle.kts, src/ …   (2절)
     └── frontend/            프론트엔드 저장소 (GitHub) React + TypeScript + Vite

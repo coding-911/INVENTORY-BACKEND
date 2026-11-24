@@ -65,7 +65,7 @@
 ```
 
 - 설정은 환경별 파일(`application-local.yml`, `application-prod.yml`)에 두고, DB 비밀번호·토큰 서명 키 같은 비밀 값은 환경 변수로 넣는다 (NFR-01).
-- 개발 PC에서도 Docker Compose로 PostgreSQL 18을 띄운다. Boot의 Docker Compose 연동으로 앱을 켜면 DB도 함께 켜진다.
+- 개발 PC에서도 Docker Compose로 PostgreSQL 18을 띄운다. Boot의 Docker Compose 연동으로 앱을 켜면 DB도 함께 켜진다. `./gradlew bootRun`이 `local` 프로필로 `docker/compose.local.yml`을 쓴다. 로컬 DB 비밀번호도 저장소에 두지 않고 `docker/.env`(Git 제외)에 두며, 저장소에는 `docker/.env.example`만 올린다 (2026-11-24).
 
 ### 3.1 배포 (2026-11-24)
 
