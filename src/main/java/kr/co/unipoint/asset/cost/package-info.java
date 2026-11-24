@@ -10,7 +10,7 @@
             "allocation",
             "admin",
             "user",
-            "common"
+            "common :: api"
         })
 package kr.co.unipoint.asset.cost;
 
