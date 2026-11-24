@@ -1,0 +1,5 @@
+# 개발 PC (./gradlew bootRun 이 이 프로필로 켠다)
+spring:
+  docker:
+    compose:
+      file: docker/compose.local.yml
