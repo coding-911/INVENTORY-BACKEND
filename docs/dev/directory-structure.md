@@ -12,14 +12,14 @@
 ├── CLAUDE.md                작업 폴더 안내: 저장소가 둘이고 어디서 무엇을 하는지
 └── workspace/
     ├── backend/             ★ 백엔드 저장소 (GitHub, 이 문서)
-    │   ├── CLAUDE.md        백엔드 규칙·명령·문서 안내
+    │   ├── CLAUDE.md        백엔드 규칙·명령·문서 안내 (로컬 전용, Git에 올리지 않음)
     │   ├── docs/            노션 설계 문서 사본, DDL, 점검 쿼리
     │   ├── tools/ddl/       DDL 생성·검증 도구 (설계 단계 참고용)
     │   ├── docker/          docker-compose.yml, PostgreSQL 초기 설정
     │   ├── deploy/          deploy.sh (백엔드 기술 스택 3.1)
     │   └── build.gradle.kts, src/ …   (2절)
     └── frontend/            프론트엔드 저장소 (GitHub) React + TypeScript + Vite
-        ├── CLAUDE.md        (프론트 개발 시작 때 만든다)
+        ├── CLAUDE.md        (프론트 개발 시작 때 만든다. 로컬 전용, Git에 올리지 않음)
         └── docs/            프론트에 필요한 노션 문서 사본 (API·권한)
 ```
 
