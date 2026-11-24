@@ -84,7 +84,7 @@ backend/
 | allocation | 공용 스탁·프로젝트 배정, 예정 배정, 배정 가능 수량 | ALLOC-01~04 | allocation | 3 |
 | delivery | 발주·입고 잔량, 납품 회차, 부분 납품, 직납 | DEL-01~04, WH-08 | delivery | 2 / 3 (발주 입고·창고 출고는 2단계, 2026-11-23) |
 | loan | 차입·대여 문서, 정산(현물·거래 전환·원물 반환)과 정산 기록, 차입·대여 잔량 | 재고 원장 처리 규칙 13절 | loan | 3 |
-| trash | 삭제 목록, 복구 (이벤트 기반) | PRJ-05, NFR-05 | trash | 3 |
+| trash | 삭제 목록, 복구. 삭제 기록과 복구는 common의 인터페이스로 주고받는다 (5절 규칙 5, 2026-11-24) | PRJ-05, NFR-05 | trash | 3 |
 | cost | 매입 원가, 판매 금액, 마진, 부대비용, 통화, 대여료 | COST-01~03 | cost | 4 |
 | dashboard | 홈 프로젝트 수·품목군별 재고 집계 (조회 전용) | UI-02~03 | — | 4 |
 | importing | 증빙 첨부 파일(올리기·목록·열기·떼기)과 서버 디스크 저장. PDF 읽기(추출·확인 후 저장)는 보류 (2026-11-24, #104) | PO-02~03 | importing | 5 |
@@ -130,7 +130,7 @@ inventory/
 
 | 영역 | 역할 | 외부 접근 |
 | --- | --- | --- |
-| `api/` | 다른 모듈이 호출하는 인터페이스, DTO, 발행 이벤트 | 허용 |
+| `api/` | 다른 모듈이 호출하는 인터페이스, DTO, 발행 이벤트, 위 모듈이 구현하는 확인 인터페이스(5절 규칙 7) | 허용 |
 | `web/` | HTTP 엔드포인트. api 또는 internal 서비스를 호출 | 프론트엔드만 |
 | `internal/` | 엔티티, 리포지토리, 서비스 구현 | **금지** |
 
@@ -142,7 +142,6 @@ inventory/
 ```txt
 importing ─┐
 dashboard ─┤
-trash ─────┤   (이벤트 수신)
 cost ──────┼──▶ project ──▶ partner
 delivery ──┤       │
 allocation ┤       ▼
@@ -151,24 +150,32 @@ equipment ─┴──▶ inventory ──▶ warehouse
                     └──▶ product
 
 모든 모듈 ──▶ common, user(권한 확인)
-승인·확인·알림이 필요한 모듈(inventory·equipment·loan) ──▶ admin (api만)
+승인·확인 요청, 알림, 변경 이력을 쓰는 모듈 ──▶ admin (api만)
 admin ──(ReviewDecided 이벤트)──▶ 대상 모듈이 승인·반려 결과를 처리
+지우는 모듈 ──(common의 삭제 기록·복구 인터페이스)──▶ trash가 구현·호출
+아래 모듈 ──(동기 이벤트 / 확인 인터페이스)──▶ 위 모듈이 받거나 구현 (규칙 6·7)
 ```
 
 | 모듈 | 의존 가능 대상 |
 | --- | --- |
-| product, warehouse, partner | common |
-| inventory | product, warehouse, common |
-| equipment | product, warehouse, inventory, partner, common |
-| project | product, partner, common |
-| allocation | inventory, equipment, project, delivery, product, common |
-| delivery | project, inventory, equipment, product, partner, common |
-| loan | inventory, equipment, allocation, project, partner, product, common |
-| cost | project, product, user, loan, common |
-| trash | common (다른 모듈의 삭제·복구 이벤트를 수신) |
-| dashboard | project, inventory, product, common (조회 API만) |
-| importing | project(첨부 대상 문서 확인·label), user(열기 권한), common. 삭제·복구는 다른 모듈처럼 이벤트로 trash에 알린다 (2026-11-24) |
-| admin | user, common. 다른 모듈은 admin의 api(요청·알림 만들기)를 호출하고, 승인·반려 결과는 admin이 이벤트로 알려 대상 모듈이 처리한다(순환 의존 방지). 정합성 점검은 여러 스키마를 읽기 전용 SQL로 조회한다 (2026-11-23) |
+| common | 없음 (공유 모듈. 다른 모듈에 의존하지 않는다) |
+| user | common |
+| product | admin(변경 이력 제공), user, common |
+| partner | user, common |
+| warehouse | partner(외부 위치의 상대 업체), user, common |
+| inventory | product, warehouse, admin, user, common |
+| equipment | product, warehouse, inventory, partner, project(기준일 전 납품 장비), admin, user, common |
+| project | product, partner, admin(변경 이력 제공), user, common |
+| allocation | inventory, equipment, project, delivery, product, admin(배정 해제 알림), user, common |
+| delivery | project, inventory, equipment, product, partner, user, common. allocation·loan은 모른다 (규칙 8) |
+| loan | inventory, equipment, allocation, project, delivery(정산 방식 바꾸기의 납품 회차), partner, product, admin, user, common |
+| cost | project, product, loan, inventory, delivery, equipment, allocation(마진·재고 평가액 계산), admin(금액 변경 이력), user, common |
+| trash | admin(변경 이력 제공), common. 다른 업무 모듈은 모른다 (규칙 5) |
+| dashboard | project, inventory, product, admin(대기 건수), user, common (조회 API만) |
+| importing | project(첨부 대상 문서 확인·label), user(열기 권한), admin(파일 없음 알림), common |
+| admin | user, common. 다른 모듈은 admin의 api(요청·알림 만들기, 변경 이력 인터페이스 구현)를 쓰고, 승인·반려 결과는 admin이 이벤트로 알려 대상 모듈이 처리한다(순환 의존 방지). 정합성 점검은 여러 스키마를 읽기 전용 SQL로 조회한다 (2026-11-23) |
+
+2026-11-24: 표의 빈칸(common·user 행)과 그림·API 행에 있는데 표에 없던 의존을 채우고 규칙 5–8을 정했다. 이 표는 각 모듈의 `package-info.java`(`@ApplicationModule(allowedDependencies)`)와 같고 ModularityTest가 검사한다.
 
 **핵심 규칙**
 
@@ -176,8 +183,10 @@ admin ──(ReviewDecided 이벤트)──▶ 대상 모듈이 승인·반려 �
 2. **inventory는 업무 모듈(project·delivery·allocation)을 모른다.** 요청 출처는 `source_type`, `source_id`, `reference_no`로만 기록한다.
 3. **직납은 inventory를 호출하지 않는다.** delivery와 equipment만 갱신한다 (WH-08).
 4. **project의 매입·매출 수량은 재고를 바꾸지 않는다** (PO-04). 차이 수량 표시는 조회만 한다.
-5. **삭제·복구는 이벤트로 처리한다.** 각 모듈이 `…Deleted` / `…Restored` 이벤트를 발행하고 trash가 목록을 관리한다. 복구가 입출고·배정·납품을 재생성하지 않는다 (NFR-05).
-6. **순환 의존 금지.** 역방향 알림이 필요하면 이벤트를 쓴다.
+5. **삭제·복구는 common의 인터페이스로 trash와 주고받는다.** 지우는 모듈이 같은 트랜잭션에서 common의 삭제 기록 인터페이스를 부르고 trash가 구현한다. 삭제 목록의 label·restorable과 복구는 각 모듈이 common의 인터페이스를 구현하고 trash가 모아 부른다. 그래서 trash와 업무 모듈은 서로 의존하지 않는다. 복구가 입출고·배정·납품을 재생성하지 않는다 (NFR-05). (2026-11-24 이벤트 방식에서 바꿈: 복구는 충돌 오류를 돌려받아야 하고 목록은 label·restorable을 물어야 해서 이벤트보다 인터페이스가 맞다. 1단계 모듈이 지울 때부터 기록된다)
+6. **순환 의존 금지. 아래 모듈(의존을 받는 쪽, 먼저 만드는 단계)은 위 모듈을 모른다.** 같은 트랜잭션의 후속 처리는 아래 모듈이 동기 이벤트를 발행하고 위 모듈이 받는다. 리스너가 예외를 던지면 전체가 롤백된다.
+7. **아래 모듈이 위 모듈의 답이 필요하면 확인 인터페이스를 쓴다.** 아래 모듈 `api/`에 인터페이스를 두고(예: product의 "이 제품을 쓰는 곳이 있나") 위 모듈이 구현한다. 아래 모듈은 구현 목록을 주입받아 모아 부른다. 목록 응답에 붙는 값(배정 수량, 금액, 첨부 수)은 id 여러 개를 한 번에 묻는다. 다른 스키마를 직접 읽는 SQL은 admin 정합성 점검에만 쓴다 (2026-11-24).
+8. **업무 모듈끼리도 단계 순서를 지킨다.** 창고 출고의 배정 소진과 발주 입고의 예정 배정 전환은 delivery가 동기 이벤트를 내고 allocation이 처리한다(`ALLOCATION_SHORTAGE`도 allocation이 낸다). 현장 직납의 대차 이동 수량은 delivery 이벤트를 loan이 받아 올리고, 정산 방식 바꾸기의 납품 회차는 loan이 delivery api를 불러 만든다. 2단계에 만든 delivery는 3단계 모듈이 들어와도 바뀌지 않는다 (2026-11-24).
 
 **검증 테스트**
 
