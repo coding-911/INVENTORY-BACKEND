@@ -1,0 +1,37 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 비밀 값 (docs/dev/tech-stack.md 3절: 비밀 값은 환경 변수·서버 .env에만)
+.env
+.env.*
+
+# Claude Code 로컬 파일 (docs/dev/conventions.md 10절: CLAUDE.md는 Git에 올리지 않는다)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
+# 로그
+*.log
+logs/
+
+# tools/ddl (Python)
+__pycache__/
+*.pyc
