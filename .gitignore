@@ -23,6 +23,11 @@ Thumbs.db
 .env
 .env.*
 
+# Claude Code 로컬 파일 (docs/dev/conventions.md 10절: CLAUDE.md는 Git에 올리지 않는다)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
 # 로그
 *.log
 logs/
