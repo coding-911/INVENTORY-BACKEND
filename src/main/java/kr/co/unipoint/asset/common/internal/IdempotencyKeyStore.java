@@ -74,7 +74,7 @@ public class IdempotencyKeyStore {
     public void complete(UUID key, ResponseEntity<?> response) {
         jdbc.sql("""
                         UPDATE common.idempotency_keys
-                        SET status = 'DONE', response_status = :status, response_body = CAST(:body AS jsonb), completed_at = now()
+                        SET status = 'DONE', response_status = :status, response_body = CAST(:body AS json), completed_at = now()
                         WHERE idempotency_key = :key
                         """)
                 .param("key", key.toString())

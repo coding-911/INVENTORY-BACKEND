@@ -66,7 +66,8 @@ class IdempotencyExecutorTest {
 
         assertThat(first).hasStatus(HttpStatus.CREATED);
         assertThat(second).hasStatus(HttpStatus.CREATED);
-        assertThat(second).bodyJson().isStrictlyEqualTo(first.getResponse().getContentAsString());
+        assertThat(second.getResponse().getContentAsString())
+                .isEqualTo(first.getResponse().getContentAsString()); // 필드 순서까지 같다
         assertThat(calls).hasValue(1);
         assertThat(writes()).isEqualTo(1);
         assertThat(row(key)).containsEntry("status", "DONE").containsEntry("response_status", 201);
@@ -132,7 +133,8 @@ class IdempotencyExecutorTest {
 
         assertThat(first).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(first).bodyJson().extractingPath("$.code").isEqualTo("VALIDATION_FAILED");
-        assertThat(second).bodyJson().isStrictlyEqualTo(first.getResponse().getContentAsString());
+        assertThat(second.getResponse().getContentAsString())
+                .isEqualTo(first.getResponse().getContentAsString()); // 필드 순서까지 같다
         assertThat(calls).hasValue(1);
         assertThat(writes()).isZero(); // 업무 처리는 되돌려졌다
         assertThat(row(key)).containsEntry("status", "DONE").containsEntry("response_status", 400);
