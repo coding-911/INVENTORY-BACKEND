@@ -1,6 +1,7 @@
 package kr.co.unipoint.asset.common.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -26,6 +27,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
@@ -37,9 +41,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@WebMvcTest
+@WebMvcTest(GlobalExceptionHandlerTest.ProbeController.class) // 처리기 검사용 컨트롤러만 올린다
 @Import(GlobalExceptionHandlerTest.ProbeController.class)
 @ExtendWith(OutputCaptureExtension.class)
+@WithMockUser // 보안 필터를 지나 처리기까지 오게 한다. 로그인 자체는 user 모듈 AuthApiTest에서 검사한다
 class GlobalExceptionHandlerTest {
 
     @Autowired
@@ -69,7 +74,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void 등록은_201() {
-        MvcTestResult result = mvc.post().uri("/probe/created").exchange();
+        MvcTestResult result = mvc.post().with(csrf()).uri("/probe/created").exchange();
 
         assertThat(result).hasStatus(HttpStatus.CREATED);
         assertThat(result).bodyJson().extractingPath("$.status").isEqualTo(201);
@@ -125,6 +130,7 @@ class GlobalExceptionHandlerTest {
     @Test
     void 본문_검사_실패는_항목별_오류를_한_번에_돌려준다() {
         MvcTestResult result = mvc.post()
+                .with(csrf())
                 .uri("/probe/body")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\" \",\"lines\":[{\"quantity\":1},{\"quantity\":0}]}")
@@ -148,6 +154,7 @@ class GlobalExceptionHandlerTest {
     @Test
     void 읽을_수_없는_본문은_입력_오류() {
         MvcTestResult result = mvc.post()
+                .with(csrf())
                 .uri("/probe/body")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":")
@@ -169,7 +176,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void 중복_요청_키가_없으면_입력_오류() {
-        MvcTestResult result = mvc.post().uri("/probe/action").exchange();
+        MvcTestResult result = mvc.post().with(csrf()).uri("/probe/action").exchange();
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("VALIDATION_FAILED");
@@ -187,7 +194,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void 지원하지_않는_메서드는_405와_허용_메서드() {
-        MvcTestResult result = mvc.delete().uri("/probe/ok").exchange();
+        MvcTestResult result = mvc.delete().with(csrf()).uri("/probe/ok").exchange();
 
         assertThat(result).hasStatus(HttpStatus.METHOD_NOT_ALLOWED);
         assertThat(result).hasHeader("Allow", "GET");
@@ -198,6 +205,7 @@ class GlobalExceptionHandlerTest {
     @Test
     void 지원하지_않는_본문_형식은_415() {
         MvcTestResult result = mvc.post()
+                .with(csrf())
                 .uri("/probe/body")
                 .contentType(MediaType.TEXT_PLAIN)
                 .content("name")
@@ -220,6 +228,7 @@ class GlobalExceptionHandlerTest {
     @Test
     void 브라우저_언어가_영어여도_검사_메시지는_한국어() {
         MvcTestResult result = mvc.post()
+                .with(csrf())
                 .uri("/probe/body")
                 .header("Accept-Language", "en-US")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -239,6 +248,17 @@ class GlobalExceptionHandlerTest {
 
         assertThat(result).hasStatus(HttpStatus.CONFLICT);
         assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("VERSION_CONFLICT");
+    }
+
+    @Test
+    void 처리_중에_난_권한_오류는_403_FORBIDDEN_인증_오류는_401_UNAUTHENTICATED() {
+        MvcTestResult denied = mvc.get().uri("/probe/access-denied").exchange();
+        MvcTestResult unauthenticated = mvc.get().uri("/probe/unauthenticated").exchange();
+
+        assertThat(denied).hasStatus(HttpStatus.FORBIDDEN);
+        assertThat(denied).bodyJson().extractingPath("$.code").isEqualTo("FORBIDDEN");
+        assertThat(unauthenticated).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(unauthenticated).bodyJson().extractingPath("$.code").isEqualTo("UNAUTHENTICATED");
     }
 
     @Test
@@ -312,6 +332,16 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/version-conflict")
         void versionConflict() {
             throw new OptimisticLockingFailureException("stale");
+        }
+
+        @GetMapping("/access-denied")
+        void accessDenied() {
+            throw new AccessDeniedException("no role");
+        }
+
+        @GetMapping("/unauthenticated")
+        void unauthenticated() {
+            throw new BadCredentialsException("bad");
         }
 
         @GetMapping("/unexpected")

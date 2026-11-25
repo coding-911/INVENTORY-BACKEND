@@ -63,13 +63,13 @@
 | [DEL] 소프트 삭제 | `deleted_at`, `deleted_by`. 사용자가 등록하는 마스터(제품·품목군·창고·위치·거래처·담당자·사용자)와 업무 문서에 둔다(2026-11-23 마스터로 확대). 원장·이력 테이블에는 두지 않는다. 코드·번호의 UNIQUE는 삭제된 행을 뺀 부분 유니크로 건다 |
 | 원장 보호 | 애플리케이션 계정에는 `inventory.ledger_entries`의 UPDATE·DELETE 권한을 주지 않고, 트리거로도 차단한다 |
 | 소유 키 | 재고 키는 `제품 × 위치 × 재고 상태 × 소유`. 소유는 `owner_type`(OWN/THIRD_PARTY) + `owner_partner_id`(타사일 때 필수) |
-| 예외 | `auth.oauth2_authorization`은 Spring Authorization Server 공식 스키마를 그대로 쓴다(문자열 PK, `timestamp`, 감사 컬럼 없음). 시스템이 쓰는 기록인 `common.idempotency_keys`, `admin.notifications`, `admin.integrity_check_results`에는 [AUD]를 두지 않는다 (2026-11-23) |
+| 예외 | `auth.spring_session`·`auth.spring_session_attributes`는 Spring Session JDBC 공식 스키마를 그대로 쓴다(char(36) PK, 시각은 epoch 밀리초 bigint, 감사 컬럼 없음. 2026-11-25 `oauth2_authorization`에서 바꿈). 시스템이 쓰는 기록인 `common.idempotency_keys`, `admin.notifications`, `admin.integrity_check_results`에는 [AUD]를 두지 않는다 (2026-11-23) |
 
 ## 2. 스키마 구성
 
 | 스키마 | 테이블 | 모듈 | 단계 |
 |---|---|---|---|
-| auth | users, roles, user_roles, user_permissions, oauth2_authorization | user | 1 |
+| auth | users, roles, user_roles, user_permissions, spring_session, spring_session_attributes | user | 1 |
 | product | product_categories, products, product_changes, bundles, bundle_components | product | 1 |
 | warehouse | warehouses, locations | warehouse | 1 |
 | partner | partners, partner_roles, contacts | partner | 1 |
@@ -99,7 +99,7 @@
 | is_active | boolean | N | 기본 true | 퇴사·비활성 |
 | last_login_at | timestamptz | Y |  |  |
 | must_change_password | boolean | N | 기본 false | 다음 로그인 때 비밀번호 변경 필요. 관리자가 계정을 만들거나 비밀번호를 초기화하면 true, 본인이 바꾸면 false. true인 동안은 내 정보·비밀번호 변경·로그아웃만 가능 (2026-11-23 추가, #100) |
-| tokens_valid_after | timestamptz | Y |  | 토큰 무효 기준 시각. 역할·금액 권한을 바꾸거나 계정을 중지하면 지금으로 기록한다. 이보다 먼저 발급된 토큰은 무효 (2026-11-23, API 명세서 1.3절) |
+| tokens_valid_after | timestamptz | Y |  | 세션 무효 기준 시각. 역할·금액 권한·사용 여부·로그인 ID·비밀번호를 바꾸면 지금으로 기록한다. 이보다 먼저 로그인한 세션은 끊는다. 이름은 토큰 방식 때 지은 것을 그대로 둔다 (2026-11-23, 2026-11-25 세션 방식으로 바꿈, API 명세서 1.3절) |
 | [DEL] |  |  |  | 소프트 삭제 (2026-11-23 추가, API 명세서 1.9절) |
 | [AUD] |  |  |  |  |
 
@@ -111,21 +111,17 @@
 | user_roles | user_id, role_id (PK 복합) | 사용자별 역할 |
 | user_permissions | user_id, permission varchar(30) (PK 복합) | 역할과 별도로 주는 권한. COST_VIEW(금액 열람), COST_EDIT(금액 수정) |
 
-### 3.2.1 auth.oauth2_authorization — 로그인 토큰 (2026-11-23 추가)
+### 3.2.1 auth.spring_session / spring_session_attributes — 로그인 세션 (2026-11-25, `oauth2_authorization`을 바꿈)
 
-- Spring Authorization Server가 발급한 인가 코드·access token·refresh token을 저장한다. refresh token을 갱신할 때마다 바꾸고(rotation) 예전 것을 무효로 하는 데 쓴다 ([API 명세서](https://app.notion.com/p/408b82ca31e580d19b7ee382dacd572b) 1.3절, [인증 방식: OAuth2 + JWT](https://app.notion.com/p/421b82ca31e581ddb2edfdac3b7008ea)).
-- 공통 규칙 예외: Spring 공식 스키마 그대로다. id는 varchar(100), 토큰 값은 text, 시각은 timestamp(시간대 없음)이고 감사 컬럼·version이 없다. 이름이나 타입을 바꾸면 Spring이 읽지 못한다.
-- 같은 공식 스키마의 oauth2_registered_client(클라이언트 목록)와 oauth2_authorization_consent(동의 기록)는 만들지 않는다. 클라이언트는 우리 프론트 하나라 설정 파일로 두고, 사내 앱이라 동의 화면이 없다.
-- principal_name은 users.login_id다. 외래 키는 걸지 않는다(Spring이 관리). 만료된 행은 주기적으로 지운다(refresh token 수명 7일이 지난 것).
+- Spring Session JDBC가 로그인 세션을 저장한다. 서버를 다시 켜도 로그인이 유지된다. 마지막 요청 뒤 8시간이 지나면 만료되고, Spring Session이 1분마다 만료된 행을 지운다 ([API 명세서](https://app.notion.com/p/408b82ca31e580d19b7ee382dacd572b) 1.3절, ADR "인증 방식: 세션 로그인").
+- 공통 규칙 예외: Spring 공식 스키마 그대로다(마이그레이션 V3). 이름만 소문자·auth 스키마·우리 제약 이름 규칙으로 바꿨다. 컬럼 이름이나 타입을 바꾸면 Spring이 읽지 못한다.
+- principal_name은 users.id(문자열)다. 외래 키는 걸지 않는다(Spring이 관리). attributes에는 사용자 ID와 로그인 시각만 직렬화해 저장한다. 역할·금액 권한은 요청마다 users·user_roles·user_permissions에서 읽는다 (2026-11-25).
+- 2026-11-25: 토큰 방식(`oauth2_authorization`)을 세션 방식으로 바꾸면서 V3 마이그레이션으로 지웠다.
 
-| 구분 | 컬럼 (33개) |
+| 테이블 | 컬럼 |
 |---|---|
-| 공통 | id varchar(100) PK, registered_client_id, principal_name, authorization_grant_type, authorized_scopes Y, attributes Y, state Y |
-| 인가 코드 | authorization_code_value / _issued_at / _expires_at / _metadata |
-| access token | access_token_value / _issued_at / _expires_at / _metadata / _type / _scopes |
-| ID 토큰 | oidc_id_token_value / _issued_at / _expires_at / _metadata |
-| refresh token | refresh_token_value / _issued_at / _expires_at / _metadata |
-| 기기 인증 | user_code_…·device_code_… 각 value / issued_at / expires_at / metadata. 쓰지 않지만 공식 스키마라 둔다 |
+| spring_session | primary_id char(36) PK, session_id char(36) UNIQUE(쿠키 값, 로그인할 때 바뀜), creation_time, last_access_time, max_inactive_interval(초), expiry_time, principal_name Y. 시각은 epoch 밀리초 bigint |
+| spring_session_attributes | session_primary_id char(36) FK(ON DELETE CASCADE), attribute_name varchar(200), attribute_bytes bytea. PK(session_primary_id, attribute_name) |
 
 ### 3.3 product.product_categories — 품목군
 

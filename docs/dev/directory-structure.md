@@ -74,7 +74,7 @@ backend/
 | 모듈 | 역할 | 주요 요구사항 | DB 스키마 | 개발 단계 |
 | --- | --- | --- | --- | --- |
 | common | 감사 컬럼, 공통 예외·응답, 중복 요청 키, 시간 처리. 모든 모듈이 쓰는 공유 모듈로 지정(`@Modulithic(sharedModules = "common")`). 2026-11-23 shared에서 이름 변경 | NFR-04, NFR-06 | common (중복 요청 키 테이블만, 2026-11-23) | 1 |
-| user | 사용자, 역할, 로그인, 금액 접근 권한, 로그인 토큰 저장(Spring Authorization Server) | NFR-08, COST-04 | auth | 1 |
+| user | 사용자, 역할, 로그인(세션), 금액 접근 권한 | NFR-08, COST-04 | auth | 1 |
 | product | 제품 마스터, 품목군, 시리얼 관리 여부, 구성 묶음 | PROD-01~05, KIT-01 | product | 1 |
 | warehouse | 창고, 보관 위치 | WH-01 | warehouse | 1 |
 | partner | 고객사·공급사, 담당자 | PARTY-01~02 | partner | 1 |

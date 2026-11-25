@@ -1,6 +1,8 @@
 package kr.co.unipoint.asset.common.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
 import java.util.List;
 import java.util.Map;
@@ -178,6 +180,8 @@ class IdempotencyExecutorTest {
     private MvcTestResult post(String uri, UUID key, UUID userId, String body) {
         var request = mvc.post()
                 .uri(uri)
+                .with(user("tester")) // 보안 필터를 지나게 한다. 요청자는 X-User로 바꿔 가며 검사한다
+                .with(csrf())
                 .header("X-User", userId.toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body);

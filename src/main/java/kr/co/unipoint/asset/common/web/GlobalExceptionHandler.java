@@ -18,6 +18,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.Errors;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
@@ -58,6 +60,18 @@ class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiResponse<ErrorDetail>> handleBodyInvalid(MethodArgumentNotValidException e) {
         return validationFailed(violations(e.getBindingResult()));
+    }
+
+    /** 로그인 안 됨. 보안 필터에서 난 것도 user 모듈이 이리로 넘긴다. */
+    @ExceptionHandler(AuthenticationException.class)
+    ResponseEntity<ApiResponse<ErrorDetail>> handleUnauthenticated(AuthenticationException e) {
+        return respond(ErrorCode.UNAUTHENTICATED, null, null, List.of(), null);
+    }
+
+    /** 권한 없음, CSRF 토큰 없음·틀림. 보안 필터에서 난 것도 user 모듈이 이리로 넘긴다. */
+    @ExceptionHandler(AccessDeniedException.class)
+    ResponseEntity<ApiResponse<ErrorDetail>> handleAccessDenied(AccessDeniedException e) {
+        return respond(ErrorCode.FORBIDDEN, null, null, List.of(), null);
     }
 
     /** 경로·쿼리 파라미터 등 메서드 인자 검사 실패. */

@@ -26,7 +26,7 @@
 | 웹 | Spring Web MVC, 내장 Tomcat 11 ★ | Boot 관리 | REST API. 반응형(WebFlux)은 쓰지 않는다. JPA·행 잠금과 맞지 않고 이 규모에 필요 없다 |
 | 입력 검증 | Bean Validation (Hibernate Validator) ★ | Boot 관리 | 요청 DTO의 형식 검사. 업무 규칙 검사는 서비스에서 한다 |
 | 모듈 구조 | Spring Modulith (core, events, test) | 2.x (Boot 4.1에 맞는 버전, BOM) | 모듈 경계 검사(ModularityTest), 모듈 간 이벤트, 모듈 단위 테스트. 이벤트 발행 기록을 DB에 남겨 실패한 처리를 다시 할 수 있다 |
-| 인증·권한 | Spring Security 7, 인가 서버(Authorization Server), 리소스 서버(JWT) ★ | Boot 관리 | OAuth2 + JWT (ADR "인증 방식: OAuth2 + JWT"). 인가 서버는 Security 7부터 본체에 들어있다. 비밀번호는 BCrypt 해시 |
+| 인증·권한 | Spring Security 7, Spring Session JDBC ★ | Boot 관리 | 서버 세션 로그인 (ADR "인증 방식: 세션 로그인", 2026-11-25 OAuth2 + JWT에서 바꿈). 세션은 DB에 둔다. 비밀번호는 BCrypt 해시 |
 | DB 접근 (쓰기) | Spring Data JPA, Hibernate 7 ★ | Boot 관리 | 엔티티 저장·수정, 낙관적 잠금(`@Version`), 재고 행 잠금(PESSIMISTIC_WRITE). UUID v7은 Hibernate 내장 생성기로 만든다 |
 | DB 접근 (조회·집계) | JPA 프로젝션, JPA Specification, JdbcClient ★ | Boot 관리 | 목록은 필요한 열만 record로, 검색 조건 조합은 Specification, 집계·마진·정합성 점검은 SQL(JdbcClient) |
 | 커넥션 풀 | HikariCP ★ | Boot 관리 | 기본 설정에서 시작하고 동시 사용 규모(ISS-10)를 보고 조정 |
@@ -36,9 +36,9 @@
 | API 문서 | springdoc-openapi (webmvc-ui) | 3.x | Boot 4 전용 버전. 코드에서 OpenAPI를 만들고, 프론트의 TypeScript 타입도 여기서 만든다. 운영에서는 문서 화면을 끄거나 관리자만 |
 | 코드 줄이기 | Lombok ★ | Boot 관리 | 쓸 수 있는 애너테이션을 제한한다 (개발 컨벤션 2절) |
 | 객체 변환 | MapStruct | 1.6.x | 엔티티 → 응답 DTO만. 요청 → 엔티티에는 쓰지 않는다 (개발 컨벤션 3절). Lombok과 함께 쓸 때 `lombok-mapstruct-binding`을 넣는다 |
-| 캐시 | Spring Cache + Caffeine ★ | Boot 관리 | 서버 메모리 캐시. 토큰 무효 시각(`tokens_valid_after`)처럼 짧게 캐시할 값만. 재고·금액은 캐시하지 않는다 |
+| 캐시 | Spring Cache + Caffeine ★ | Boot 관리 | 서버 메모리 캐시. 바뀌는 일이 드문 기준 정보처럼 짧게 캐시할 값만. 재고·금액은 캐시하지 않는다 |
 | 일정 작업 | Spring Scheduling (`@Scheduled`) ★ | Boot 관리 | 매일 새벽 정합성 점검, 보증 만료 알림, 오래된 중복 요청 키 정리. 서버가 한 대라 중복 실행 방지(ShedLock)는 필요 없다 |
-| 로그 | SLF4J + Logback, 구조화 로그(JSON) ★ | Boot 관리 | 운영은 JSON 한 줄 로그, 개발은 읽기 쉬운 형식. 비밀번호·토큰·금액은 로그에 남기지 않는다 |
+| 로그 | SLF4J + Logback, 구조화 로그(JSON) ★ | Boot 관리 | 운영은 JSON 한 줄 로그, 개발은 읽기 쉬운 형식. 비밀번호·세션 쿠키·금액은 로그에 남기지 않는다 |
 | 추적 | Micrometer Tracing ★ | Boot 관리 | 요청마다 traceId를 만들어 로그와 오류 응답(`traceId`, API 명세서 1.4)에 넣는다. 외부 추적 서버는 두지 않는다 |
 | 상태 확인 | Spring Boot Actuator, Micrometer ★ | Boot 관리 | `health`·`info`·`metrics`만 열고, 내부망에서만 접근 |
 | 테스트 | JUnit, AssertJ, Mockito, Spring Boot Test ★ | Boot 관리 | 단위·통합·API 테스트 |
@@ -64,7 +64,7 @@
 모두 한 대의 리눅스 서버, Docker Compose로 실행
 ```
 
-- 설정은 환경별 파일(`application-local.yml`, `application-prod.yml`)에 두고, DB 비밀번호·토큰 서명 키 같은 비밀 값은 환경 변수로 넣는다 (NFR-01).
+- 설정은 환경별 파일(`application-local.yml`, `application-prod.yml`)에 두고, DB 비밀번호·첫 관리자 비밀번호(`ADMIN_PASSWORD`) 같은 비밀 값은 환경 변수로 넣는다 (NFR-01).
 - 개발 PC에서도 Docker Compose로 PostgreSQL 18을 띄운다. Boot의 Docker Compose 연동으로 앱을 켜면 DB도 함께 켜진다. `./gradlew bootRun`이 `local` 프로필로 `docker/compose.local.yml`을 쓴다. 로컬 DB 비밀번호도 저장소에 두지 않고 `docker/.env`(Git 제외)에 두며, 저장소에는 `docker/.env.example`만 올린다 (2026-11-24).
 
 ### 3.1 배포 (2026-11-24)
@@ -91,7 +91,7 @@
 | 기술 | 쓰지 않는 이유 | 대신 |
 |---|---|---|
 | Spring Cloud, Kafka 등 메시지 큐 | 서비스를 여러 개로 나눈 구조용이다. 우리는 앱 하나에 모듈만 나눴다 | Spring Modulith 이벤트 |
-| Redis | 서버가 한 대라 분산 캐시·세션 공유가 필요 없다. JWT라 세션도 없다 | Caffeine |
+| Redis | 서버가 한 대라 분산 캐시·세션 공유가 필요 없다. 로그인 세션은 PostgreSQL에 둔다(Spring Session JDBC) | Caffeine, Spring Session JDBC |
 | Elasticsearch, Kibana | 데이터량이 PostgreSQL 검색으로 충분한 규모다 | PostgreSQL 인덱스 |
 | Spring Batch | 대량 일괄 처리가 없다 | `@Scheduled` |
 | WebSocket, SSE | 알림은 "우선 화면 알림만"으로 정했다 | 화면이 주기적으로 알림 목록 조회 |
@@ -116,6 +116,6 @@
 - [Spring Boot 4.1 System Requirements](https://docs.spring.io/spring-boot/4.1/system-requirements.html)
 - [Spring Boot 4.1.0 출시](https://spring.io/blog/2026/06/10/spring-boot-4/)
 - [Spring Modulith 2.0 GA](https://spring.io/blog/2025/11/21/spring-modulith-2-0-ga-1-4-5-and-1-3-11-released/)
-- [Spring Authorization Server의 Spring Security 7.0 통합](https://spring.io/blog/2025/09/11/spring-authorization-server-moving-to-spring-security-7-0)
+- [Spring Session JDBC](https://docs.spring.io/spring-session/reference/http-session.html#httpsession-jdbc)
 - [springdoc-openapi](https://github.com/springdoc/springdoc-openapi)
 - [PostgreSQL 18 릴리스 노트](https://www.postgresql.org/docs/current/release-18-6.html)
