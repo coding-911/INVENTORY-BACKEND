@@ -12,6 +12,7 @@ import kr.co.unipoint.asset.common.api.ApiResponse;
 import kr.co.unipoint.asset.common.api.BusinessException;
 import kr.co.unipoint.asset.common.api.ErrorCode;
 import kr.co.unipoint.asset.common.api.PageResponse;
+import kr.co.unipoint.asset.common.internal.IdempotencyKeyStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,6 +44,9 @@ class GlobalExceptionHandlerTest {
 
     @Autowired
     MockMvcTester mvc;
+
+    @MockitoBean // 중복 요청 키 저장은 DB가 필요해 IdempotencyExecutorTest에서 검사한다
+    IdempotencyKeyStore idempotencyKeys;
 
     @Test
     void 성공_응답은_OK_코드와_데이터를_담고_경고가_없으면_warnings를_뺀다() {

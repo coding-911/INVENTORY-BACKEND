@@ -480,7 +480,7 @@ PDF 읽기(import_jobs: 추출 결과 확인 후 작성 중 문서로 저장)는
 
 | 테이블 | 컬럼 | 설명 |
 |---|---|---|
-| idempotency_keys | idempotency_key varchar(64) PK, user_id, action varchar(100), request_hash varchar(64), status CHECK IN ('IN_PROGRESS','DONE') 기본 IN_PROGRESS, response_status Y, response_body jsonb Y, created_at, completed_at Y. CHECK (DONE이면 response_status·completed_at 필수). INDEX (created_at) | 업무 동작의 중복 요청 방지 (INV-08, API 명세서 1.5절). 재고·장비·문서 상태가 바뀌는 모든 업무 동작에 쓴다 |
+| idempotency_keys | idempotency_key varchar(64) PK, user_id, action varchar(100), request_hash varchar(64), status CHECK IN ('IN_PROGRESS','DONE') 기본 IN_PROGRESS, response_status Y, response_body json Y(2026-11-25 jsonb → json, 받은 그대로 보관해 다시 보낸 응답의 필드 순서를 유지), created_at, completed_at Y. CHECK (DONE이면 response_status·completed_at 필수). INDEX (created_at) | 업무 동작의 중복 요청 방지 (INV-08, API 명세서 1.5절). 재고·장비·문서 상태가 바뀌는 모든 업무 동작에 쓴다 |
 
 - 키는 처리 전에 따로 저장(IN_PROGRESS)하고, 업무 처리와 같은 트랜잭션에서 응답을 저장하며 DONE으로 바꾼다. 업무 오류(4xx)로 끝나도 그 응답을 저장하고, 서버 오류(5xx)면 키를 지워 다시 보낼 수 있게 한다.
 - 같은 키가 다시 오면: DONE이면 저장한 응답을 그대로, IN_PROGRESS면 409 `REQUEST_IN_PROGRESS`, user_id·action·request_hash 중 하나라도 다르면 400.
