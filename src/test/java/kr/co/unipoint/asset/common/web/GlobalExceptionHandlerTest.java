@@ -181,11 +181,51 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void 지원하지_않는_메서드는_입력_오류() {
+    void 지원하지_않는_메서드는_405와_허용_메서드() {
         MvcTestResult result = mvc.delete().uri("/probe/ok").exchange();
 
-        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("VALIDATION_FAILED");
+        assertThat(result).hasStatus(HttpStatus.METHOD_NOT_ALLOWED);
+        assertThat(result).hasHeader("Allow", "GET");
+        assertThat(result).bodyJson().extractingPath("$.status").isEqualTo(405);
+        assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("METHOD_NOT_ALLOWED");
+    }
+
+    @Test
+    void 지원하지_않는_본문_형식은_415() {
+        MvcTestResult result = mvc.post()
+                .uri("/probe/body")
+                .contentType(MediaType.TEXT_PLAIN)
+                .content("name")
+                .exchange();
+
+        assertThat(result).hasStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        assertThat(result).bodyJson().extractingPath("$.status").isEqualTo(415);
+        assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("UNSUPPORTED_MEDIA_TYPE");
+    }
+
+    @Test
+    void JSON으로_줄_수_없는_Accept는_본문_없이_406() {
+        MvcTestResult result =
+                mvc.get().uri("/probe/ok").accept(MediaType.APPLICATION_XML).exchange();
+
+        assertThat(result).hasStatus(HttpStatus.NOT_ACCEPTABLE);
+        assertThat(result.getResponse().getContentLength()).isZero();
+    }
+
+    @Test
+    void 브라우저_언어가_영어여도_검사_메시지는_한국어() {
+        MvcTestResult result = mvc.post()
+                .uri("/probe/body")
+                .header("Accept-Language", "en-US")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\" \",\"lines\":[]}")
+                .exchange();
+
+        assertThat(result)
+                .bodyJson()
+                .extractingPath("$.data.errors[0].message")
+                .asString()
+                .matches(".*[가-힣].*");
     }
 
     @Test

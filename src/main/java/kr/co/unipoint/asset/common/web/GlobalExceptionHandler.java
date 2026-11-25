@@ -13,11 +13,14 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.Errors;
 import org.springframework.validation.FieldError;
-import org.springframework.web.HttpMediaTypeException;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -88,10 +91,29 @@ class GlobalExceptionHandler {
         return validationFailed(List.of());
     }
 
-    /** 지원하지 않는 메서드·Content-Type. 공통 코드 표에 따로 없어 입력 오류로 돌려준다. */
-    @ExceptionHandler({HttpRequestMethodNotSupportedException.class, HttpMediaTypeException.class})
-    ResponseEntity<ApiResponse<ErrorDetail>> handleUnsupportedRequest(Exception e) {
-        return validationFailed(List.of());
+    /** 지원하지 않는 메서드. 허용 메서드를 {@code Allow} 헤더로 알린다. */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ApiResponse<ErrorDetail>> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        ResponseEntity<ApiResponse<ErrorDetail>> response =
+                respond(ErrorCode.METHOD_NOT_ALLOWED, null, null, List.of(), null);
+        if (e.getSupportedHttpMethods() == null) {
+            return response;
+        }
+        return ResponseEntity.status(response.getStatusCode())
+                .allow(e.getSupportedHttpMethods().toArray(HttpMethod[]::new))
+                .body(response.getBody());
+    }
+
+    /** 지원하지 않는 요청 본문 형식(Content-Type). */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ApiResponse<ErrorDetail>> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
+        return respond(ErrorCode.UNSUPPORTED_MEDIA_TYPE, null, null, List.of(), null);
+    }
+
+    /** 요청한 응답 형식(Accept)으로 줄 수 없음. 그 형식으로 본문을 쓸 수 없어 본문 없이 406만 보낸다. */
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    ResponseEntity<Void> handleNotAcceptable(HttpMediaTypeNotAcceptableException e) {
+        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).build();
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
