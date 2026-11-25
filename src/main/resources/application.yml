@@ -27,9 +27,9 @@ spring:
 asset:
   first-admin:
     # 사용 중인 관리자가 없을 때 앱이 켜지면서 만드는 관리자. 처음 로그인하면 비밀번호를 바꿔야 한다
-    # 실제 운영 전에는 기본값(admin/1234)을 빼고 환경 변수로만 넣는다 (2026-11-25, 개발 편의로 기본값을 둠)
-    login-id: ${ADMIN_LOGIN_ID:admin}
-    password: ${ADMIN_PASSWORD:1234}
+    # 기본값이 없다. 관리자가 없는데 값이 없거나 비밀번호가 1234면 앱이 켜지지 않는다(개발 PC 기본값은 application-local.yml, ADR-17)
+    login-id: ${ADMIN_LOGIN_ID:}
+    password: ${ADMIN_PASSWORD:}
 
 logging:
   pattern:

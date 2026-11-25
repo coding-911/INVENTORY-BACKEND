@@ -1,0 +1,7 @@
+# 테스트 전용 설정. src/main/resources/application.yml 위에 덧씌워진다(스프링 부트는 classpath:/config/를 함께 읽는다).
+# 사용 중인 관리자가 없으면 앱이 켜지지 않으므로(FirstAdminInitializer) 테스트 앱이 만들 관리자를 넣는다.
+# 개발용 기본 비밀번호(1234)는 local 프로필 밖에서 쓸 수 없어 다른 값을 쓴다.
+asset:
+  first-admin:
+    login-id: test-admin
+    password: test-admin-password

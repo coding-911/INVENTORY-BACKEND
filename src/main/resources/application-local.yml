@@ -3,3 +3,8 @@ spring:
   docker:
     compose:
       file: docker/compose.local.yml
+
+asset:
+  first-admin: # 개발 편의 기본값 admin/1234 (2026-11-25). 개발 PC(local 프로필)에서만 쓸 수 있다
+    login-id: ${ADMIN_LOGIN_ID:admin}
+    password: ${ADMIN_PASSWORD:1234}

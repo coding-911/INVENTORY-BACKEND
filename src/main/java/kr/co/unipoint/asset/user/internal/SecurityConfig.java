@@ -80,7 +80,8 @@ class SecurityConfig {
 
     /**
      * 세션 쿠키 {@code SESSION}: HttpOnly(화면 스크립트가 못 읽음), SameSite=Lax(다른 사이트에서 보낸 쓰기 요청에 안 붙음), HTTPS 요청이면 Secure.
-     * 스프링 부트 4.1 자동 설정의 쿠키는 HttpOnly가 꺼져 있어(테스트로 확인) 직접 만든다.
+     * {@code server.servlet.session.cookie.http-only}를 줘도 스프링 부트 4.1이 자동으로 만든 쿠키 설정은 HttpOnly가 false였다(원인은
+     * 확인하지 않음). 그래서 직접 만들고 AuthApiTest로 확인한다.
      */
     @Bean
     CookieSerializer sessionCookieSerializer() {

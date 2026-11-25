@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 class UserAccountStore {
 
     private static final String ACCOUNT_COLUMNS = """
-            SELECT u.id, u.login_id, u.name, u.password_hash, u.is_active, u.must_change_password,
+            SELECT u.id, u.login_id, u.name, u.password_hash, u.is_active, u.must_change_password, u.tokens_valid_after,
                    ARRAY(SELECT r.code FROM auth.user_roles ur JOIN auth.roles r ON r.id = ur.role_id
                          WHERE ur.user_id = u.id ORDER BY r.code) AS roles,
                    ARRAY(SELECT p.permission FROM auth.user_permissions p
@@ -38,25 +38,11 @@ class UserAccountStore {
                 .optional();
     }
 
+    /** 로그인할 때와 요청마다 세션을 확인할 때({@link SessionCheckFilter}) 쓴다. 기본 키와 user_id 인덱스로 읽는다. */
     Optional<Account> findById(UUID id) {
         return jdbc.sql(ACCOUNT_COLUMNS + "WHERE u.id = :id AND u.deleted_at IS NULL")
                 .param("id", id)
                 .query(UserAccountStore::account)
-                .optional();
-    }
-
-    /** 요청마다 세션이 아직 유효한지 볼 값. */
-    Optional<SessionState> findSessionState(UUID id) {
-        return jdbc.sql("""
-                        SELECT is_active, tokens_valid_after, must_change_password
-                        FROM auth.users
-                        WHERE id = :id AND deleted_at IS NULL
-                        """)
-                .param("id", id)
-                .query((rs, rowNum) -> new SessionState(
-                        rs.getBoolean("is_active"),
-                        toInstant(rs.getObject("tokens_valid_after", OffsetDateTime.class)),
-                        rs.getBoolean("must_change_password")))
                 .optional();
     }
 
@@ -114,6 +100,7 @@ class UserAccountStore {
                 rs.getString("password_hash"),
                 rs.getBoolean("is_active"),
                 rs.getBoolean("must_change_password"),
+                toInstant(rs.getObject("tokens_valid_after", OffsetDateTime.class)),
                 strings(rs.getArray("roles")),
                 strings(rs.getArray("permissions")));
     }
@@ -126,6 +113,9 @@ class UserAccountStore {
         return value == null ? null : value.toInstant();
     }
 
+    /**
+     * @param tokensValidAfter 이보다 먼저 로그인한 세션은 끊는다 (INV-80). 없으면 null
+     */
     record Account(
             UUID id,
             String loginId,
@@ -133,16 +123,17 @@ class UserAccountStore {
             String passwordHash,
             boolean active,
             boolean mustChangePassword,
+            Instant tokensValidAfter,
             List<String> roles,
-            List<String> permissions) {}
+            List<String> permissions) {
 
-    /**
-     * @param tokensValidAfter 이보다 먼저 로그인한 세션은 끊는다. 없으면 null
-     */
-    record SessionState(boolean active, Instant tokensValidAfter, boolean mustChangePassword) {
-
-        boolean allows(Instant loginAt) {
+        /** 사용 중이고, 로그인한 뒤 권한·비밀번호 등이 바뀌지 않았으면 그 세션을 계속 쓸 수 있다. */
+        boolean allowsSessionFrom(Instant loginAt) {
             return active && (tokensValidAfter == null || !loginAt.isBefore(tokensValidAfter));
+        }
+
+        LoginUser toLoginUser(Instant loginAt) {
+            return new LoginUser(id, loginId, name, roles, permissions, loginAt);
         }
     }
 }

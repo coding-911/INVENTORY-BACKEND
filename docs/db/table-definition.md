@@ -115,7 +115,7 @@
 
 - Spring Session JDBC가 로그인 세션을 저장한다. 서버를 다시 켜도 로그인이 유지된다. 마지막 요청 뒤 8시간이 지나면 만료되고, Spring Session이 1분마다 만료된 행을 지운다 ([API 명세서](https://app.notion.com/p/408b82ca31e580d19b7ee382dacd572b) 1.3절, ADR "인증 방식: 세션 로그인").
 - 공통 규칙 예외: Spring 공식 스키마 그대로다(마이그레이션 V3). 이름만 소문자·auth 스키마·우리 제약 이름 규칙으로 바꿨다. 컬럼 이름이나 타입을 바꾸면 Spring이 읽지 못한다.
-- principal_name은 users.id(문자열)다. 외래 키는 걸지 않는다(Spring이 관리). 로그인 정보(사용자 ID·역할·금액 권한·로그인 시각)는 attributes에 직렬화해 저장한다.
+- principal_name은 users.id(문자열)다. 외래 키는 걸지 않는다(Spring이 관리). attributes에는 사용자 ID와 로그인 시각만 직렬화해 저장한다. 역할·금액 권한은 요청마다 users·user_roles·user_permissions에서 읽는다 (2026-11-25).
 - 2026-11-25: 토큰 방식(`oauth2_authorization`)을 세션 방식으로 바꾸면서 V3 마이그레이션으로 지웠다.
 
 | 테이블 | 컬럼 |

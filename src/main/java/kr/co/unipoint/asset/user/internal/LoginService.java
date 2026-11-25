@@ -40,9 +40,7 @@ public class LoginService {
         }
         Account account = found.get();
         Instant loginAt = store.recordLogin(account.id());
-        LoginUser user = new LoginUser(
-                account.id(), account.loginId(), account.name(), account.roles(), account.permissions(), loginAt);
-        return new LoginResult(user, profile(account));
+        return new LoginResult(account.toLoginUser(loginAt), profile(account));
     }
 
     /** 세션 확인을 통과한 사용자만 부르므로 없으면(그사이 삭제) 401이다. */

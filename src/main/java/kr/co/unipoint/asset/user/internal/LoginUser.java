@@ -1,7 +1,5 @@
 package kr.co.unipoint.asset.user.internal;
 
-import java.io.Serial;
-import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,20 +9,18 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 /**
- * 세션에 저장하는 로그인한 사람. 세션 테이블에 직렬화해 저장한다.
+ * 이번 요청의 로그인한 사람. 컨트롤러는 {@code @AuthenticationPrincipal LoginUser}로 받는다.
  *
- * <p>{@link #getName()}은 사용자 ID라서 세션 테이블의 {@code principal_name}에 사용자 ID가 들어간다.
+ * <p>세션에 저장하지 않는다. 세션에는 {@link SessionUser}(ID·로그인 시각)만 있고, {@link SessionCheckFilter}가 요청마다 DB에서 계정을 읽어
+ * 이것을 만든다. 그래서 역할·금액 권한은 항상 DB의 최신 값이다.
  *
  * @param roles {@code ADMIN}·{@code OPERATOR}·{@code VIEWER}
  * @param permissions {@code COST_VIEW}·{@code COST_EDIT}
- * @param loginAt 로그인한 시각(DB 시각). {@code users.tokens_valid_after}보다 이르면 세션을 끊는다 (INV-80)
+ * @param loginAt 로그인한 시각(DB 시각)
  */
 public record LoginUser(
         UUID id, String loginId, String name, List<String> roles, List<String> permissions, Instant loginAt)
-        implements AuthenticatedPrincipal, Serializable {
-
-    @Serial
-    private static final long serialVersionUID = 1L;
+        implements AuthenticatedPrincipal {
 
     public LoginUser {
         roles = List.copyOf(roles);

@@ -3,10 +3,13 @@ package kr.co.unipoint.asset.user;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import jakarta.servlet.http.Cookie;
+import java.io.ByteArrayInputStream;
+import java.io.ObjectInputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import kr.co.unipoint.asset.support.TestcontainersConfiguration;
+import kr.co.unipoint.asset.user.internal.SessionUser;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,6 +18,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
@@ -79,6 +83,30 @@ class AuthApiTest {
                 .query(Integer.class)
                 .single();
         assertThat(maxInactive).isEqualTo(8 * 60 * 60);
+    }
+
+    @Test
+    void 세션에는_사용자_ID와_로그인_시각만_저장하고_역할_금액_권한은_넣지_않는다() throws Exception {
+        String loginId = newLoginId();
+        UUID id = createUser(loginId, "OPERATOR", true, false, "COST_VIEW");
+
+        login(loginId, PASSWORD);
+
+        byte[] bytes =
+                jdbc.sql("""
+                        SELECT a.attribute_bytes
+                        FROM auth.spring_session s
+                        JOIN auth.spring_session_attributes a ON a.session_primary_id = s.primary_id
+                        WHERE s.principal_name = :id AND a.attribute_name = 'SPRING_SECURITY_CONTEXT'
+                        """).param("id", id.toString()).query(byte[].class).single();
+        SecurityContext stored;
+        try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
+            stored = (SecurityContext) in.readObject();
+        }
+        assertThat(stored.getAuthentication().getPrincipal()).isInstanceOf(SessionUser.class);
+        assertThat(((SessionUser) stored.getAuthentication().getPrincipal()).id())
+                .isEqualTo(id);
+        assertThat(stored.getAuthentication().getAuthorities()).isEmpty();
     }
 
     @Test
