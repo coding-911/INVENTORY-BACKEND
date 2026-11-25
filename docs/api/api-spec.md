@@ -37,7 +37,7 @@
 
 ### 1.3 인증과 권한
 
-- 방식: **서버 세션 로그인** (2026-11-25 결정, OAuth2 + JWT에서 바꿈. ADR "인증 방식: 세션 로그인"). 프론트 로그인 화면이 `POST /api/v1/user/login`으로 아이디·비밀번호를 보내면 서버가 세션을 만들어 HttpOnly 쿠키(`SESSION`)로 준다. 그 뒤 요청에는 브라우저가 쿠키를 자동으로 붙인다. 프론트는 토큰을 다루지 않는다. 로그아웃은 `POST /api/v1/user/logout`.
+- 방식: **서버 세션 로그인** (2026-11-25 결정, OAuth2 + JWT에서 바꿈. ADR-17 "인증 방식: 세션 로그인", 결정마다 후보와 이유는 `docs/adr/adr-17-session-login.md`). 프론트 로그인 화면이 `POST /api/v1/user/login`으로 아이디·비밀번호를 보내면 서버가 세션을 만들어 HttpOnly 쿠키(`SESSION`)로 준다. 그 뒤 요청에는 브라우저가 쿠키를 자동으로 붙인다. 프론트는 토큰을 다루지 않는다. 로그아웃은 `POST /api/v1/user/logout`.
 - 세션은 DB(`auth.spring_session`, Spring Session JDBC)에 둔다. 서버를 다시 켜도 로그인이 유지된다. **마지막 요청 뒤 8시간**이 지나면 끝나고 다시 로그인한다.
 - 쿠키 `SESSION`은 HttpOnly·SameSite=Lax이고 HTTPS 요청이면 Secure다. 화면과 API는 같은 주소에서 쓴다(Nginx가 `/api`를 백엔드로 넘김). 그래서 CORS 설정이 없다. 개발 중에는 Vite 프록시로 같은 주소처럼 쓴다.
 - CSRF: 쿠키를 자동으로 보내는 방식이라, 쓰기 요청(POST·PATCH·DELETE, 로그인·로그아웃 포함)은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 넣어 보낸다. 서버가 쿠키가 없는 응답마다 넣어 주고, 로그인하면 값을 바꾼다. 헤더가 없거나 다르면 403 `FORBIDDEN`.
