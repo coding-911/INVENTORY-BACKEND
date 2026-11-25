@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
  *   <li>아이디·비밀번호가 없다: 켜져도 아무도 계정을 관리할 수 없다.
  *   <li>개발 PC({@code local} 프로필)가 아닌데 비밀번호가 개발용 기본값 {@code 1234}다: 누구나 관리자로 로그인해 비밀번호를 바꿔 버릴 수 있다.
  *       "처음 로그인하면 비밀번호를 바꿔야 한다"는 이것을 막지 못한다.
+ *   <li>비밀번호가 해시 한도({@link LoginService#PASSWORD_MAX_BYTES})보다 길다: 해시할 수 없다.
  * </ul>
  */
 @Component
@@ -60,6 +61,10 @@ class FirstAdminInitializer implements ApplicationRunner {
         }
         if (password.equals(DEV_DEFAULT_PASSWORD) && !environment.acceptsProfiles(Profiles.of("local"))) {
             throw new IllegalStateException("개발용 기본 비밀번호로는 첫 관리자를 만들 수 없습니다. ADMIN_PASSWORD에 다른 값을 넣고 다시 켜 주세요");
+        }
+        if (!LoginService.fitsPasswordHash(password)) {
+            throw new IllegalStateException(
+                    "ADMIN_PASSWORD가 너무 깁니다. " + LoginService.PASSWORD_MAX_BYTES + "바이트(영문 72자, 한글 24자)까지 넣고 다시 켜 주세요");
         }
         if (store.loginIdExists(loginId)) {
             log.warn("사용 중인 관리자가 없지만 다른 계정이 이미 로그인 ID({})를 씁니다. 첫 관리자를 만들지 않았습니다", loginId);

@@ -1,5 +1,6 @@
 package kr.co.unipoint.asset.user.internal;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -11,9 +12,16 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 아이디·비밀번호 확인과 내 정보 (API 목록 "로그인·로그아웃", "내 정보"). */
+/** 아이디·비밀번호 확인, 내 정보, 본인 비밀번호 변경 (API 목록 "로그인·로그아웃", "내 정보", "본인 비밀번호 변경"). */
 @Service
 public class LoginService {
+
+    /**
+     * 새로 해시하는 비밀번호의 최대 바이트(UTF-8). 비밀번호 규칙이 아니라 기술 한도다: BCrypt는 72바이트까지만 다루고, Spring Security는 더 긴
+     * 값을 해시하면 예외를 던진다(그대로 두면 500). 비교할 때는 예외 없이 앞 72바이트만 보므로 로그인에는 두지 않는다. 영문 72자, 한글 24자
+     * (2026-11-25).
+     */
+    public static final int PASSWORD_MAX_BYTES = 72;
 
     private final UserAccountStore store;
     private final PasswordEncoder passwordEncoder;
@@ -23,6 +31,10 @@ public class LoginService {
         this.store = store;
         this.passwordEncoder = passwordEncoder;
         this.dummyHash = passwordEncoder.encode("not-a-password");
+    }
+
+    public static boolean fitsPasswordHash(String password) {
+        return password.getBytes(StandardCharsets.UTF_8).length <= PASSWORD_MAX_BYTES;
     }
 
     /**
@@ -49,6 +61,23 @@ public class LoginService {
         return store.findById(id)
                 .map(LoginService::profile)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHENTICATED));
+    }
+
+    /**
+     * 지금 비밀번호가 맞으면 새 비밀번호로 바꾸고, 비밀번호 변경 필요 상태를 풀고, {@code tokens_valid_after}를 지금으로 기록해 이 사용자의 모든
+     * 세션(이 요청의 세션 포함)을 끊는다 (API 목록 "본인 비밀번호 변경", #100, INV-80). 비밀번호 규칙은 없다. 지금 비밀번호와 같아도 바꾼다.
+     *
+     * <p>그사이 다른 요청이 비밀번호를 먼저 바꿨으면 지금 비밀번호가 맞지 않는 것과 같으므로 {@code PASSWORD_MISMATCH}다.
+     */
+    @Transactional
+    public void changePassword(UUID id, String currentPassword, String newPassword) {
+        Account account = store.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHENTICATED));
+        if (!passwordEncoder.matches(currentPassword, account.passwordHash())) {
+            throw new BusinessException(ErrorCode.PASSWORD_MISMATCH);
+        }
+        if (!store.changePassword(id, account.passwordHash(), passwordEncoder.encode(newPassword))) {
+            throw new BusinessException(ErrorCode.PASSWORD_MISMATCH);
+        }
     }
 
     private static UserProfile profile(Account account) {

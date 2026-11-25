@@ -20,6 +20,7 @@ public enum ErrorCode {
     VERSION_CONFLICT(HttpStatus.CONFLICT, "다른 사용자가 먼저 수정했습니다. 다시 불러와 주세요"),
     REQUEST_IN_PROGRESS(HttpStatus.CONFLICT, "같은 요청을 처리하고 있습니다"),
     REQUEST_KEY_REUSED(HttpStatus.BAD_REQUEST, "이미 다른 요청에 쓴 키입니다"),
+    PASSWORD_MISMATCH(HttpStatus.BAD_REQUEST, "현재 비밀번호가 맞지 않습니다"),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다");
 
     private final HttpStatus status;
