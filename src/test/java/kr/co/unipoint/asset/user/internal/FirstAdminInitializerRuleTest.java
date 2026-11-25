@@ -1,5 +1,6 @@
 package kr.co.unipoint.asset.user.internal;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -47,6 +48,30 @@ class FirstAdminInitializerRuleTest {
 
         assertThatCode(() -> run("admin", "1234", "local")).doesNotThrowAnyException();
         verify(store).createFirstAdmin(eq("admin"), anyString(), anyString());
+    }
+
+    @Test
+    void 비밀번호가_해시_한도_72바이트를_넘으면_켜지지_않는다() {
+        when(store.hasActiveAdmin()).thenReturn(false);
+
+        assertThatThrownBy(() -> run("admin", "가".repeat(25), "prod"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("너무 깁니다");
+        verify(store, never()).createFirstAdmin(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * 72바이트 한도를 새로 해시하는 곳(비밀번호 변경·첫 관리자)에만 두고 로그인에는 두지 않는 이유. Spring Security가 이 동작을 바꾸면 이 테스트가
+     * 알려 준다.
+     */
+    @Test
+    void BCrypt는_72바이트를_넘으면_해시할_때는_예외를_던지고_비교할_때는_앞_72바이트만_본다() {
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
+        String hash = encoder.encode("a".repeat(72));
+
+        assertThatThrownBy(() -> encoder.encode("a".repeat(73))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(encoder.matches("a".repeat(73), hash)).isTrue();
+        assertThat(encoder.matches("b".repeat(73), hash)).isFalse();
     }
 
     @Test

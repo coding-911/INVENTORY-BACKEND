@@ -54,6 +54,24 @@ class UserAccountStore {
                 .single();
     }
 
+    /**
+     * 본인 비밀번호 변경. 비밀번호 변경 필요 상태를 풀고 {@code tokens_valid_after}를 지금으로 기록해 그 전 세션을 모두 끊는다 (INV-80). 읽은 뒤
+     * 다른 요청이 비밀번호를 먼저 바꿨으면 바꾸지 않고 false다(읽은 해시와 같을 때만 바꾼다).
+     */
+    boolean changePassword(UUID id, String currentHash, String newHash) {
+        return jdbc.sql("""
+                        UPDATE auth.users
+                        SET password_hash = :newHash, must_change_password = false, tokens_valid_after = now(),
+                            updated_at = now(), updated_by = id, version = version + 1
+                        WHERE id = :id AND password_hash = :currentHash AND deleted_at IS NULL
+                        """)
+                        .param("id", id)
+                        .param("currentHash", currentHash)
+                        .param("newHash", newHash)
+                        .update()
+                == 1;
+    }
+
     boolean hasActiveAdmin() {
         return jdbc.sql("""
                         SELECT EXISTS (

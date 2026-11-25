@@ -289,6 +289,135 @@ class AuthApiTest {
         assertThat(mvc.get().uri("/api/v1/user/me").cookie(after).exchange()).hasStatus(HttpStatus.OK);
     }
 
+    @Test
+    void 비밀번호를_바꾸면_새_비밀번호로만_로그인되고_변경_필요_상태가_풀린다() {
+        String loginId = newLoginId();
+        UUID id = createUser(loginId, "OPERATOR", true, true);
+        Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
+
+        MvcTestResult change = changePassword(session, PASSWORD, "새-비밀번호");
+
+        assertThat(change).hasStatus(HttpStatus.OK);
+        assertThat(change).bodyJson().extractingPath("$.code").isEqualTo("OK");
+        assertThat(login(loginId, PASSWORD)).hasStatus(HttpStatus.UNAUTHORIZED);
+        MvcTestResult again = login(loginId, "새-비밀번호");
+        assertThat(again).hasStatus(HttpStatus.OK);
+        assertThat(again).bodyJson().extractingPath("$.data.mustChangePassword").isEqualTo(false);
+        assertThat(jdbc.sql(
+                                "SELECT version = 1 AND updated_by = id AND updated_at IS NOT NULL FROM auth.users WHERE id = :id")
+                        .param("id", id)
+                        .query(Boolean.class)
+                        .single())
+                .isTrue();
+    }
+
+    @Test
+    void INV80_비밀번호를_바꾸면_이_세션과_다른_PC의_세션이_모두_끊긴다() {
+        String loginId = newLoginId();
+        UUID id = createUser(loginId, "OPERATOR", true, false);
+        Cookie mine = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
+        Cookie otherPc = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
+
+        assertThat(changePassword(mine, PASSWORD, "새-비밀번호")).hasStatus(HttpStatus.OK);
+
+        assertThat(mvc.get().uri("/api/v1/user/me").cookie(mine).exchange()).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(mvc.get().uri("/api/v1/user/me").cookie(otherPc).exchange()).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(sessionCount(id)).isZero();
+    }
+
+    @Test
+    void 지금_비밀번호가_틀리면_400_PASSWORD_MISMATCH이고_비밀번호와_세션은_그대로다() {
+        String loginId = newLoginId();
+        createUser(loginId, "OPERATOR", true, true);
+        Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
+
+        MvcTestResult change = changePassword(session, "wrong", "새-비밀번호");
+
+        assertThat(change).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(change).bodyJson().extractingPath("$.code").isEqualTo("PASSWORD_MISMATCH");
+        assertThat(change).bodyJson().extractingPath("$.message").isEqualTo("현재 비밀번호가 맞지 않습니다");
+        MvcTestResult me = mvc.get().uri("/api/v1/user/me").cookie(session).exchange();
+        assertThat(me).hasStatus(HttpStatus.OK);
+        assertThat(me).bodyJson().extractingPath("$.data.mustChangePassword").isEqualTo(true);
+        assertThat(login(loginId, PASSWORD)).hasStatus(HttpStatus.OK);
+    }
+
+    @Test
+    void 지금_비밀번호와_같아도_바꿀_수_있다_비밀번호_규칙은_빈_값만_막는다() {
+        String loginId = newLoginId();
+        createUser(loginId, "OPERATOR", true, true);
+        Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
+
+        assertThat(changePassword(session, PASSWORD, PASSWORD)).hasStatus(HttpStatus.OK);
+        assertThat(login(loginId, PASSWORD))
+                .bodyJson()
+                .extractingPath("$.data.mustChangePassword")
+                .isEqualTo(false);
+    }
+
+    @Test
+    void 새_비밀번호가_비거나_72바이트를_넘으면_400_VALIDATION_FAILED() {
+        String loginId = newLoginId();
+        createUser(loginId, "OPERATOR", true, false);
+        Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
+
+        MvcTestResult blank = changePassword(session, PASSWORD, " ");
+        // 한글 25자 = 75바이트. 영문 72자(72바이트)는 받는다
+        MvcTestResult tooLong = changePassword(session, PASSWORD, "가".repeat(25));
+        MvcTestResult loginTooLong = login(loginId, "a".repeat(73));
+
+        assertThat(blank).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(blank).bodyJson().extractingPath("$.code").isEqualTo("VALIDATION_FAILED");
+        assertThat(tooLong).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(tooLong).bodyJson().extractingPath("$.data.errors[0].field").isEqualTo("newPassword");
+        assertThat(tooLong)
+                .bodyJson()
+                .extractingPath("$.data.errors[0].message")
+                .isEqualTo("비밀번호는 72바이트(영문 72자, 한글 24자)까지 넣을 수 있습니다");
+        // 로그인은 길이를 보지 않는다. 너무 긴 비밀번호는 다른 실패와 같은 401 LOGIN_FAILED다
+        assertThat(loginTooLong).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(loginTooLong).bodyJson().extractingPath("$.code").isEqualTo("LOGIN_FAILED");
+        assertThat(changePassword(session, PASSWORD, "a".repeat(72))).hasStatus(HttpStatus.OK);
+    }
+
+    @Test
+    void 비밀번호_변경도_로그인과_CSRF_토큰이_필요하다() {
+        String loginId = newLoginId();
+        createUser(loginId, "OPERATOR", true, false);
+        Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
+
+        MvcTestResult noLogin = mvc.post()
+                .uri("/api/v1/user/me/password")
+                .with(xsrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(passwordBody(PASSWORD, "새-비밀번호"))
+                .exchange();
+        MvcTestResult noCsrf = mvc.post()
+                .uri("/api/v1/user/me/password")
+                .cookie(session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(passwordBody(PASSWORD, "새-비밀번호"))
+                .exchange();
+
+        assertThat(noLogin).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(noCsrf).hasStatus(HttpStatus.FORBIDDEN);
+        assertThat(login(loginId, PASSWORD)).hasStatus(HttpStatus.OK);
+    }
+
+    private MvcTestResult changePassword(Cookie session, String current, String next) {
+        return mvc.post()
+                .uri("/api/v1/user/me/password")
+                .cookie(session)
+                .with(xsrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(passwordBody(current, next))
+                .exchange();
+    }
+
+    private static String passwordBody(String current, String next) {
+        return "{\"currentPassword\":\"" + current + "\",\"newPassword\":\"" + next + "\"}";
+    }
+
     private MvcTestResult login(String loginId, String password) {
         return mvc.post()
                 .uri("/api/v1/user/login")
