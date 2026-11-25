@@ -8,6 +8,7 @@ import kr.co.unipoint.asset.common.api.BusinessException;
 import kr.co.unipoint.asset.common.api.ErrorCode;
 import kr.co.unipoint.asset.common.api.ErrorDetail;
 import kr.co.unipoint.asset.common.api.ErrorDetail.FieldViolation;
+import kr.co.unipoint.asset.common.internal.IdempotencyKeyStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -41,6 +42,12 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    private final IdempotencyKeyStore idempotencyKeys;
+
+    GlobalExceptionHandler(IdempotencyKeyStore idempotencyKeys) {
+        this.idempotencyKeys = idempotencyKeys;
+    }
 
     @ExceptionHandler(BusinessException.class)
     ResponseEntity<ApiResponse<ErrorDetail>> handleBusiness(BusinessException e) {
@@ -142,7 +149,10 @@ class GlobalExceptionHandler {
             ErrorCode errorCode, String message, String invariant, List<FieldViolation> violations, Object details) {
         ErrorDetail detail = new ErrorDetail(invariant, violations, details, MDC.get(TraceIdFilter.MDC_KEY));
         String text = message != null ? message : errorCode.defaultMessage();
-        return ResponseEntity.status(errorCode.status()).body(ApiResponse.error(errorCode, text, detail));
+        ResponseEntity<ApiResponse<ErrorDetail>> response =
+                ResponseEntity.status(errorCode.status()).body(ApiResponse.error(errorCode, text, detail));
+        idempotencyKeys.recordFailure(response); // 중복 요청 키: 4xx는 응답 저장, 5xx는 키 삭제 (api-spec 1.5)
+        return response;
     }
 
     private static List<FieldViolation> violations(Errors errors) {
