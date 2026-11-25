@@ -13,6 +13,7 @@ public enum ErrorCode {
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다"),
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 맞지 않습니다"),
     PASSWORD_CHANGE_REQUIRED(HttpStatus.FORBIDDEN, "비밀번호를 바꾼 뒤 사용할 수 있습니다"),
+    ACCOUNT_INACTIVE(HttpStatus.FORBIDDEN, "사용 중지된 계정입니다. 관리자에게 문의해 주세요"),
     FORBIDDEN(HttpStatus.FORBIDDEN, "권한이 없습니다"),
     NOT_FOUND(HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다"),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 방식입니다"),
