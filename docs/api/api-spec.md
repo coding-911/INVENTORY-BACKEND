@@ -37,12 +37,15 @@
 
 ### 1.3 인증과 권한
 
-- 방식: **OAuth2 + JWT** (2026-11-23 결정). 백엔드는 OAuth2 리소스 서버로, 모든 API에서 `Authorization: Bearer {access token}`의 JWT를 검증한다.
-- 인가 서버는 **자체 운영**(Spring Authorization Server)이다. 우리 사용자 테이블(`auth.users`)의 아이디·비밀번호로 로그인하고, 프론트는 표준 OAuth2 흐름(Authorization Code + PKCE)으로 토큰을 받는다. 계정 만들기·비밀번호 초기화는 관리자가 한다.
-- 토큰: access token 15분, refresh token 7일이며 갱신할 때마다 새 refresh token으로 바꾼다(rotation). access token은 브라우저 메모리에, refresh token은 HttpOnly 쿠키에 둔다. localStorage는 쓰지 않는다.
-- access token(JWT)에는 **사용자 ID, 역할(관리자·입력자·조회자), 금액 권한(보기·수정)**을 넣는다. 서버는 토큰의 역할·권한으로 권한을 판단하고, 프론트도 토큰에서 역할을 읽어 메뉴를 보여 준다.
-- 관리자가 역할·금액 권한을 바꾸거나 계정을 중지하면 그 사용자의 `tokens_valid_after`(토큰 무효 기준 시각)를 지금으로 기록한다. 서버는 요청마다 토큰 발급 시각이 그보다 이르면 401 `UNAUTHENTICATED`로 막고 refresh token 갱신도 거부한다. 그 사용자는 다시 로그인하면 바뀐 권한으로 일한다. 이 비교 값은 짧게 캐시할 수 있다.
-- 권한(역할 3개: 관리자·입력자·조회자, 금액 권한 2개: 보기·수정)은 서버가 요청마다 토큰으로 확인한다. 화면에 안 보이는 기능을 다른 방법으로 요청해도 막힌다 ([사용자 계정과 권한](https://app.notion.com/p/40cb82ca31e5811dbdd1f86d13354231)).
+- 방식: **서버 세션 로그인** (2026-11-25 결정, OAuth2 + JWT에서 바꿈. ADR "인증 방식: 세션 로그인"). 프론트 로그인 화면이 `POST /api/v1/user/login`으로 아이디·비밀번호를 보내면 서버가 세션을 만들어 HttpOnly 쿠키(`SESSION`)로 준다. 그 뒤 요청에는 브라우저가 쿠키를 자동으로 붙인다. 프론트는 토큰을 다루지 않는다. 로그아웃은 `POST /api/v1/user/logout`.
+- 세션은 DB(`auth.spring_session`, Spring Session JDBC)에 둔다. 서버를 다시 켜도 로그인이 유지된다. **마지막 요청 뒤 8시간**이 지나면 끝나고 다시 로그인한다.
+- 쿠키 `SESSION`은 HttpOnly·SameSite=Lax이고 HTTPS 요청이면 Secure다. 화면과 API는 같은 주소에서 쓴다(Nginx가 `/api`를 백엔드로 넘김). 그래서 CORS 설정이 없다. 개발 중에는 Vite 프록시로 같은 주소처럼 쓴다.
+- CSRF: 쿠키를 자동으로 보내는 방식이라, 쓰기 요청(POST·PATCH·DELETE, 로그인·로그아웃 포함)은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 넣어 보낸다. 서버가 쿠키가 없는 응답마다 넣어 주고, 로그인하면 값을 바꾼다. 헤더가 없거나 다르면 403 `FORBIDDEN`.
+- 로그인 실패(없는 아이디, 틀린 비밀번호, 사용 중지 계정)는 모두 401 `LOGIN_FAILED`다. 어느 경우인지 알려 주면 있는 아이디를 알아낼 수 있어서 구분하지 않는다. 성공하면 `users.last_login_at`을 기록하고 `Me`를 돌려준다.
+- 세션에는 **사용자 ID, 역할(관리자·입력자·조회자), 금액 권한(보기·수정)**이 들어 있고, 서버는 이것으로 권한을 판단한다. 프론트는 `Me`(로그인 응답, `GET /api/v1/user/me`)의 roles·permissions로 메뉴를 그린다.
+- 관리자가 역할·금액 권한·사용 여부·로그인 ID·비밀번호를 바꾸면 그 사용자의 `tokens_valid_after`(세션 무효 기준 시각, 컬럼 이름은 그대로 둔다)를 지금으로 기록한다(INV-80). 서버는 요청마다 계정을 DB에서 다시 보고, 로그인 시각이 그보다 이르거나 계정이 사용 중지·삭제됐으면 세션을 끊고 401 `UNAUTHENTICATED`로 막는다. 그 사용자는 다시 로그인하면 바뀐 권한으로 일한다.
+- 첫 관리자: 앱이 켜질 때 사용 중인 관리자가 없으면 환경 변수 `ADMIN_LOGIN_ID`·`ADMIN_PASSWORD`로 관리자 한 명을 만든다(`must_change_password = true`, 1.14). 개발 편의로 기본값 admin/1234를 두었고, 실제 운영 전에 기본값을 빼고 환경 변수로만 넣는다 (2026-11-25).
+- 권한(역할 3개: 관리자·입력자·조회자, 금액 권한 2개: 보기·수정)은 서버가 요청마다 확인한다. 화면에 안 보이는 기능을 다른 방법으로 요청해도 막힌다 ([사용자 계정과 권한](https://app.notion.com/p/40cb82ca31e5811dbdd1f86d13354231)).
 - 금액 보기 권한이 없으면 응답에 금액 필드 자체가 없다 (INV-50).
 
 ### 1.4 공통 응답 형식과 오류 코드
@@ -120,7 +123,9 @@
 | `VALIDATION_FAILED` | 400 | 입력 내용을 확인해 주세요 | 공통. `errors`에 항목별 오류 |
 | `CONFIRMATION_REQUIRED` | 400 | 확인이 필요합니다 | 공통. 확인 후 다시 보내기 |
 | `UNAUTHENTICATED` | 401 | 로그인이 필요합니다 | 공통 |
-| `FORBIDDEN` | 403 | 권한이 없습니다 | 공통 |
+| `LOGIN_FAILED` | 401 | 아이디 또는 비밀번호가 맞지 않습니다 | 로그인. 없는 아이디·틀린 비밀번호·사용 중지 계정을 구분하지 않는다 (2026-11-25 추가) |
+| `FORBIDDEN` | 403 | 권한이 없습니다 | 공통. CSRF 토큰이 없거나 틀려도 이것 (1.3) |
+| `PASSWORD_CHANGE_REQUIRED` | 403 | 비밀번호를 바꾼 뒤 사용할 수 있습니다 | 공통. 1.14 (2026-11-25 목록에 추가) |
 | `NOT_FOUND` | 404 | 대상을 찾을 수 없습니다 | 공통 |
 | `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 요청 방식입니다 | 공통. 2026-11-25 추가 |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | 지원하지 않는 요청 형식입니다 | 공통. 2026-11-25 추가 |
@@ -303,7 +308,7 @@ API 하나가 한 행이다. 행을 열면 개요 → 요청 → 응답 → 오�
 
 | 객체 | 필드 |
 |---|---|
-| `Me` | id, loginId, name, roles[`ADMIN`·`OPERATOR`·`VIEWER`], permissions[`COST_VIEW`·`COST_EDIT`] |
+| `Me` | id, loginId, name, roles[`ADMIN`·`OPERATOR`·`VIEWER`], permissions[`COST_VIEW`·`COST_EDIT`], mustChangePassword |
 | `User` | id, loginId, name, email, isActive, roles[], permissions[], lastLoginAt, createdAt, updatedAt, version |
 | `Role` | code, name |
 | `Product` | id, itemCode, productName, modelName, category{id, code, name}, manufacturer, componentRole, specification, unit, serialManaged, isActive, hasHistory, note, createdAt, updatedAt, version. `hasHistory`는 처리 이력이 있는지(삭제·Item Code 변경·시리얼 관리 변경 가능 여부를 화면이 미리 알기 위함) |

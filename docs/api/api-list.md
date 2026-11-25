@@ -44,7 +44,7 @@ API 151개. 권한 열은 [권한 매트릭스](../rules/permissions.md) 1.1절�
 | user | 계정 수정 (역할·금액 권한·사용 여부 포함) | PATCH | `/api/v1/user/{id}` | 관리자 |  |  |  | [열기](https://app.notion.com/p/421b82ca31e5810db1ebd8793e79eb2c) |
 | user | 계정 삭제 | DELETE | `/api/v1/user/{id}` | 관리자 |  |  |  | [열기](https://app.notion.com/p/421b82ca31e581daba0fd798a319516a) |
 | user | 비밀번호 초기화 | POST | `/api/v1/user/{id}/password-reset` | 관리자 |  |  |  | [열기](https://app.notion.com/p/421b82ca31e58186aca5c2a5534654a2) |
-| user | 로그인·토큰 발급·갱신·로그아웃 | POST | `/oauth2/authorize, /login, /oauth2/token, /logout` | 모두 |  |  |  | [열기](https://app.notion.com/p/421b82ca31e5811c9b4bf2988866f304) |
+| user | 로그인·로그아웃 | POST | `/api/v1/user/login, /api/v1/user/logout` | 모두 |  |  |  | [열기](https://app.notion.com/p/421b82ca31e5811c9b4bf2988866f304) |
 | warehouse | 창고 목록 | GET | `/api/v1/warehouse` | 모두 |  |  |  | [열기](https://app.notion.com/p/421b82ca31e581a8bbfbc7e2d036084d) |
 | warehouse | 창고 등록 | POST | `/api/v1/warehouse` | 관리자 |  |  |  | [열기](https://app.notion.com/p/421b82ca31e5819185c8f27f835b468c) |
 | warehouse | 위치 목록 | GET | `/api/v1/warehouse/location` | 모두 |  |  |  | [열기](https://app.notion.com/p/421b82ca31e5815391f9e090560c08c7) |
