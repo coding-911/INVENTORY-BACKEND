@@ -175,7 +175,7 @@ admin ──(ReviewDecided 이벤트)──▶ 대상 모듈이 승인·반려 �
 | importing | project(첨부 대상 문서 확인·label), user(열기 권한), admin(파일 없음 알림), common |
 | admin | user, common. 다른 모듈은 admin의 api(요청·알림 만들기, 변경 이력 인터페이스 구현)를 쓰고, 승인·반려 결과는 admin이 이벤트로 알려 대상 모듈이 처리한다(순환 의존 방지). 정합성 점검은 여러 스키마를 읽기 전용 SQL로 조회한다 (2026-11-23) |
 
-2026-11-24: 표의 빈칸(common·user 행)과 그림·API 행에 있는데 표에 없던 의존을 채우고 규칙 5–8을 정했다. 이 표는 각 모듈의 `package-info.java`(`@ApplicationModule(allowedDependencies)`)와 같고 ModularityTest가 검사한다.
+2026-11-24: 표의 빈칸(common·user 행)과 그림·API 행에 있는데 표에 없던 의존을 채우고 규칙 5–8을 정했다. 이 표는 각 모듈의 `package-info.java`(`@ApplicationModule(allowedDependencies)`)와 같고 ModularityTest가 검사한다. 다른 모듈이 쓰는 common의 공개 영역은 `common/api`(`@NamedInterface("api")`)라서 package-info에는 `"common :: api"`로 적는다 (2026-11-24).
 
 **핵심 규칙**
 
