@@ -110,20 +110,44 @@ class AuthApiTest {
     }
 
     @Test
-    void 비밀번호가_틀리거나_없는_아이디거나_사용_중지면_모두_같은_401_LOGIN_FAILED() {
+    void 비밀번호가_틀리거나_없는_아이디거나_삭제된_계정이면_모두_같은_401_LOGIN_FAILED() {
         String loginId = newLoginId();
         createUser(loginId, "OPERATOR", true, false);
         String inactiveId = newLoginId();
         createUser(inactiveId, "OPERATOR", false, false);
+        String deletedId = newLoginId();
+        UUID deleted = createUser(deletedId, "OPERATOR", true, false);
+        jdbc.sql("UPDATE auth.users SET deleted_at = now(), deleted_by = id WHERE id = :id")
+                .param("id", deleted)
+                .update();
 
+        // 사용 중지 계정도 비밀번호가 틀리면 LOGIN_FAILED다. 그래야 사용 중지 여부로 아이디가 드러나지 않는다
         for (MvcTestResult result : new MvcTestResult[] {
-            login(loginId, "wrong"), login("nobody-" + loginId, PASSWORD), login(inactiveId, PASSWORD)
+            login(loginId, "wrong"),
+            login("nobody-" + loginId, PASSWORD),
+            login(inactiveId, "wrong"),
+            login(deletedId, PASSWORD)
         }) {
             assertThat(result).hasStatus(HttpStatus.UNAUTHORIZED);
             assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("LOGIN_FAILED");
             assertThat(result).bodyJson().extractingPath("$.message").isEqualTo("아이디 또는 비밀번호가 맞지 않습니다");
             assertThat(result.getResponse().getCookie("SESSION")).isNull();
         }
+    }
+
+    @Test
+    void 비밀번호는_맞는데_사용_중지된_계정이면_403_ACCOUNT_INACTIVE이고_로그인되지_않는다() {
+        String loginId = newLoginId();
+        UUID id = createUser(loginId, "OPERATOR", false, false);
+
+        MvcTestResult result = login(loginId, PASSWORD);
+
+        assertThat(result).hasStatus(HttpStatus.FORBIDDEN);
+        assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("ACCOUNT_INACTIVE");
+        assertThat(result).bodyJson().extractingPath("$.message").isEqualTo("사용 중지된 계정입니다. 관리자에게 문의해 주세요");
+        assertThat(result.getResponse().getCookie("SESSION")).isNull();
+        assertThat(sessionCount(id)).isZero();
+        assertThat(lastLoginAtIsSet(id)).isFalse();
     }
 
     @Test
