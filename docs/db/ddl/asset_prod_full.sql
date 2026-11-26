@@ -830,7 +830,7 @@ CREATE TABLE cost.extra_costs (
     id uuid NOT NULL DEFAULT uuidv7(),
     project_id uuid NOT NULL,
     cost_type varchar(20) NOT NULL,
-    amount numeric(18,2) NOT NULL,
+    amount numeric(20,4) NOT NULL,
     currency char(3) NOT NULL DEFAULT 'KRW',
     exchange_rate numeric(18,6) NOT NULL DEFAULT 1,
     exchange_rate_date date,
@@ -859,7 +859,7 @@ CREATE TABLE cost.extra_costs (
 
 CREATE TABLE cost.loan_fees (
     loan_document_id uuid NOT NULL,
-    amount numeric(18,2) NOT NULL,
+    amount numeric(20,4) NOT NULL,
     currency char(3) NOT NULL DEFAULT 'KRW',
     exchange_rate numeric(18,6) NOT NULL DEFAULT 1,
     exchange_rate_date date,

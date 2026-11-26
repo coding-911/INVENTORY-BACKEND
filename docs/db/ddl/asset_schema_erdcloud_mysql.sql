@@ -906,7 +906,7 @@ CREATE TABLE `extra_costs` (
     `id` CHAR(36) NOT NULL DEFAULT (UUID()) COMMENT 'ID (UUID v7, 앱에서 생성. DB 기본값도 v7, PostgreSQL 18)',
     `project_id` CHAR(36) NOT NULL COMMENT '프로젝트',
     `cost_type` VARCHAR(20) NOT NULL COMMENT '비용 유형',
-    `amount` NUMERIC(18,2) NOT NULL COMMENT '금액',
+    `amount` NUMERIC(20,4) NOT NULL COMMENT '금액',
     `currency` CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
     `exchange_rate` NUMERIC(18,6) NOT NULL DEFAULT 1 COMMENT '적용 환율',
     `exchange_rate_date` DATE NULL COMMENT '환율 기준일',
@@ -939,7 +939,7 @@ CREATE TABLE `extra_costs` (
 
 CREATE TABLE `loan_fees` (
     `loan_document_id` CHAR(36) NOT NULL COMMENT '대차 문서',
-    `amount` NUMERIC(18,2) NOT NULL COMMENT '금액',
+    `amount` NUMERIC(20,4) NOT NULL COMMENT '금액',
     `currency` CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT '통화',
     `exchange_rate` NUMERIC(18,6) NOT NULL DEFAULT 1 COMMENT '적용 환율',
     `exchange_rate_date` DATE NULL COMMENT '환율 기준일',

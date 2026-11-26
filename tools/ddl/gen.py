@@ -729,12 +729,13 @@ T("trash", "trash_events", "삭제·복구 이력", [
 
 
 # ================================================================ cost
-def MONEY(amount_col, amount_type, krw_col):
+def MONEY(amount_col, amount_type, krw_col, krw_type=None):
+    """krw_type이 없으면 원화 환산도 amount_type. 원래 통화 금액만 넓힌 경우(2026-11-26, COST-05)에 따로 준다."""
     return [C(amount_col, amount_type, True, comment="금액" if amount_col == "amount" else "단가"),
             C("currency", "char(3)", True, "'KRW'", "통화"),
             C("exchange_rate", "numeric(18,6)", True, "1", "적용 환율"),
             C("exchange_rate_date", "date", comment="환율 기준일"),
-            C(krw_col, amount_type, True, comment="원화 환산")]
+            C(krw_col, krw_type or amount_type, True, comment="원화 환산")]
 
 
 T("cost", "currencies", "통화", [
@@ -759,7 +760,7 @@ T("cost", "extra_costs", "부대비용", [
     ID(),
     C("project_id", "uuid", True, comment="프로젝트"),
     C("cost_type", "varchar(20)", True, comment="비용 유형"),
-    *MONEY("amount", "numeric(18,2)", "amount_krw"),
+    *MONEY("amount", "numeric(20,4)", "amount_krw", "numeric(18,2)"),
     C("cost_date", "date", True, comment="비용 발생일"),
     C("trade_document_id", "uuid", comment="관련 거래 문서"),
     C("loan_document_id", "uuid", comment="관련 대차 문서"),
@@ -775,7 +776,7 @@ T("cost", "extra_costs", "부대비용", [
 
 T("cost", "loan_fees", "대여료", [
     C("loan_document_id", "uuid", True, comment="대차 문서"),
-    *MONEY("amount", "numeric(18,2)", "amount_krw"),
+    *MONEY("amount", "numeric(20,4)", "amount_krw", "numeric(18,2)"),
     C("attribution_basis", "varchar(20)", True, "'SETTLED_DATE'", "금액 귀속 기준"),
     C("attribution_date", "date", comment="직접 입력한 귀속일(MANUAL일 때)"),
     *AUD()],
