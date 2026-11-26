@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -33,11 +34,14 @@ import tools.jackson.databind.json.JsonMapper;
  * <ul>
  *   <li>로그인하면 세션을 만들고 HttpOnly 쿠키({@code SESSION})로 주고받는다. 세션은 DB({@code auth.spring_session})에 두고 마지막 요청 뒤
  *       8시간이 지나면 끝난다({@code spring.session.timeout}).
- *   <li>로그인·로그아웃 외의 모든 API는 로그인이 필요하다. 역할·금액 권한별 제한은 그 API를 만들 때 붙인다 (docs/rules/permissions.md).
+ *   <li>로그인·로그아웃 외의 모든 API는 로그인이 필요하다. 역할·금액 권한별 제한은 각 모듈의 컨트롤러 메서드에 {@code @PreAuthorize}로
+ *       붙인다(예: 관리자만 {@code hasRole('ADMIN')}, docs/rules/permissions.md 1.1). 막히면 403 {@code FORBIDDEN}. 요청 본문 검사가
+ *       먼저 돌아서, 권한 없는 사람이 형식이 틀린 본문을 보내면 400이다.
  *   <li>CSRF: 쿠키를 자동으로 보내는 방식이라 쓰기 요청은 {@code XSRF-TOKEN} 쿠키 값을 {@code X-XSRF-TOKEN} 헤더로 함께 보내야 한다.
  * </ul>
  */
 @Configuration
+@EnableMethodSecurity
 class SecurityConfig {
 
     static final String LOGIN_URL = "/api/v1/user/login";
