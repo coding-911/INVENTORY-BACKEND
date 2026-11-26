@@ -11,7 +11,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * API 테스트용 로그인. 계정을 DB에 바로 넣고 실제 로그인 API로 세션 쿠키를 받는다. 그래서 권한 검사도 실제와 같이 요청마다 DB의 역할을 읽어서 한다.
+ * API 테스트용 로그인. 계정을 DB에 바로 넣고 실제 로그인 API로 세션 쿠키를 받는다. 그래서 권한 검사도 실제와 같이 요청마다 DB에서 역할의 권한을 읽어서 한다.
  */
 public final class TestLogins {
 
@@ -27,28 +27,45 @@ public final class TestLogins {
         this.passwordEncoder = passwordEncoder;
     }
 
-    /** 역할 하나와 금액 권한을 가진 사용 중인 계정을 만들고 로그인한 세션 쿠키를 돌려준다. */
-    public Cookie loginAs(String role, String... permissions) {
-        String loginId = "t-" + UUID.randomUUID().toString().substring(0, 12);
-        UUID id = jdbc.sql("""
-                        INSERT INTO auth.users (login_id, name, password_hash, is_active, must_change_password, created_by)
-                        VALUES (:loginId, '테스트', :hash, true, false, uuidv7())
-                        RETURNING id
-                        """)
-                .param("loginId", loginId)
-                .param("hash", passwordEncoder.encode(PASSWORD))
+    /** 기본 역할({@code ADMIN}, {@code OPERATOR_BASIC} 등, 권한 매트릭스 1.5) 계정을 만들고 로그인한 세션 쿠키를 돌려준다. */
+    public Cookie loginAs(String roleCode) {
+        UUID roleId = jdbc.sql("SELECT id FROM auth.roles WHERE code = :code AND deleted_at IS NULL")
+                .param("code", roleCode)
                 .query(UUID.class)
                 .single();
-        jdbc.sql("INSERT INTO auth.user_roles (user_id, role_id) SELECT :id, id FROM auth.roles WHERE code = :role")
-                .param("id", id)
-                .param("role", role)
-                .update();
+        return login(roleId, roleCode);
+    }
+
+    /**
+     * 주어진 권한만 가진 역할을 새로 만들고 그 역할 계정으로 로그인한다. 권한 하나가 있고 없음에 따라 결과가 갈리는지 볼 때 쓴다(기본 역할에 없는
+     * 조합).
+     */
+    public Cookie loginWithPermissions(String... permissions) {
+        String code = "T_"
+                + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+        UUID roleId = jdbc.sql("INSERT INTO auth.roles (code, name) VALUES (:code, :code) RETURNING id")
+                .param("code", code)
+                .query(UUID.class)
+                .single();
         for (String permission : permissions) {
-            jdbc.sql("INSERT INTO auth.user_permissions (user_id, permission) VALUES (:id, :permission)")
-                    .param("id", id)
+            jdbc.sql("INSERT INTO auth.role_permissions (role_id, permission_code) VALUES (:roleId, :permission)")
+                    .param("roleId", roleId)
                     .param("permission", permission)
                     .update();
         }
+        return login(roleId, code);
+    }
+
+    private Cookie login(UUID roleId, String roleCode) {
+        String loginId = "t-" + UUID.randomUUID().toString().substring(0, 12);
+        jdbc.sql("""
+                        INSERT INTO auth.users (login_id, name, password_hash, is_active, must_change_password, role_id, created_by)
+                        VALUES (:loginId, '테스트', :hash, true, false, :roleId, uuidv7())
+                        """)
+                .param("loginId", loginId)
+                .param("hash", passwordEncoder.encode(PASSWORD))
+                .param("roleId", roleId)
+                .update();
         Cookie session = mvc.post()
                 .uri("/api/v1/user/login")
                 .with(xsrf())
@@ -58,7 +75,7 @@ public final class TestLogins {
                 .getResponse()
                 .getCookie("SESSION");
         if (session == null) {
-            throw new IllegalStateException("테스트 로그인 실패: " + role);
+            throw new IllegalStateException("테스트 로그인 실패: " + roleCode);
         }
         return session;
     }

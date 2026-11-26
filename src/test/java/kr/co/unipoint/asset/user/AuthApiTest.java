@@ -44,7 +44,7 @@ class AuthApiTest {
     @Test
     void 로그인하면_내_정보와_HttpOnly_세션_쿠키를_주고_그_쿠키로_내_정보를_본다() {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "OPERATOR", true, false, "COST_VIEW");
+        UUID id = createUser(loginId, "OPERATOR_COST_VIEW", true, false);
 
         MvcTestResult login = login(loginId, PASSWORD);
 
@@ -52,12 +52,16 @@ class AuthApiTest {
         assertThat(login).bodyJson().extractingPath("$.code").isEqualTo("OK");
         assertThat(login).bodyJson().extractingPath("$.data.id").isEqualTo(id.toString());
         assertThat(login).bodyJson().extractingPath("$.data.loginId").isEqualTo(loginId);
-        assertThat(login).bodyJson().extractingPath("$.data.roles").asArray().containsExactly("OPERATOR");
+        assertThat(login).bodyJson().extractingPath("$.data.role.code").isEqualTo("OPERATOR_COST_VIEW");
+        assertThat(login).bodyJson().extractingPath("$.data.role.name").isEqualTo("영업 운영자");
+        assertThat(login).bodyJson().extractingPath("$.data.role.id").isNotNull();
+        assertThat(login).bodyJson().doesNotHavePath("$.data.roles");
+        // 권한 목록 순서(sort_order)대로 온다
         assertThat(login)
                 .bodyJson()
                 .extractingPath("$.data.permissions")
                 .asArray()
-                .containsExactly("COST_VIEW");
+                .containsExactly("PARTNER_MANAGE", "PRODUCT_MANAGE", "DOCUMENT_MANAGE", "STOCK_OPERATE", "COST_VIEW");
         assertThat(login).bodyJson().extractingPath("$.data.mustChangePassword").isEqualTo(false);
         Cookie session = login.getResponse().getCookie("SESSION");
         assertThat(session).isNotNull();
@@ -71,9 +75,30 @@ class AuthApiTest {
     }
 
     @Test
+    void 역할의_권한을_바꾸면_세션을_끊지_않고_다음_요청부터_적용된다() {
+        String roleCode = "T_R5_"
+                + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        UUID roleId = jdbc.sql("INSERT INTO auth.roles (code, name) VALUES (:code, :code) RETURNING id")
+                .param("code", roleCode)
+                .query(UUID.class)
+                .single();
+        String loginId = newLoginId();
+        createUser(loginId, roleCode, true, false);
+        Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
+
+        jdbc.sql("INSERT INTO auth.role_permissions (role_id, permission_code) VALUES (:roleId, 'COST_VIEW')")
+                .param("roleId", roleId)
+                .update();
+        MvcTestResult me = mvc.get().uri("/api/v1/user/me").cookie(session).exchange();
+
+        assertThat(me).hasStatus(HttpStatus.OK);
+        assertThat(me).bodyJson().extractingPath("$.data.permissions").asArray().containsExactly("COST_VIEW");
+    }
+
+    @Test
     void 세션은_DB에_사용자_ID로_저장되고_마지막_요청_뒤_8시간이면_끝난다() {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "VIEWER", true, false);
+        UUID id = createUser(loginId, "USER_BASIC", true, false);
 
         login(loginId, PASSWORD);
 
@@ -86,9 +111,9 @@ class AuthApiTest {
     }
 
     @Test
-    void 세션에는_사용자_ID와_로그인_시각만_저장하고_역할_금액_권한은_넣지_않는다() throws Exception {
+    void 세션에는_사용자_ID와_로그인_시각만_저장하고_권한은_넣지_않는다() throws Exception {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "OPERATOR", true, false, "COST_VIEW");
+        UUID id = createUser(loginId, "OPERATOR_COST_VIEW", true, false);
 
         login(loginId, PASSWORD);
 
@@ -112,11 +137,11 @@ class AuthApiTest {
     @Test
     void 비밀번호가_틀리거나_없는_아이디거나_삭제된_계정이면_모두_같은_401_LOGIN_FAILED() {
         String loginId = newLoginId();
-        createUser(loginId, "OPERATOR", true, false);
+        createUser(loginId, "OPERATOR_BASIC", true, false);
         String inactiveId = newLoginId();
-        createUser(inactiveId, "OPERATOR", false, false);
+        createUser(inactiveId, "OPERATOR_BASIC", false, false);
         String deletedId = newLoginId();
-        UUID deleted = createUser(deletedId, "OPERATOR", true, false);
+        UUID deleted = createUser(deletedId, "OPERATOR_BASIC", true, false);
         jdbc.sql("UPDATE auth.users SET deleted_at = now(), deleted_by = id WHERE id = :id")
                 .param("id", deleted)
                 .update();
@@ -138,7 +163,7 @@ class AuthApiTest {
     @Test
     void 비밀번호는_맞는데_사용_중지된_계정이면_403_ACCOUNT_INACTIVE이고_로그인되지_않는다() {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "OPERATOR", false, false);
+        UUID id = createUser(loginId, "OPERATOR_BASIC", false, false);
 
         MvcTestResult result = login(loginId, PASSWORD);
 
@@ -179,7 +204,7 @@ class AuthApiTest {
     @Test
     void CSRF_토큰_없이_로그인하면_403_FORBIDDEN이고_XSRF_TOKEN_쿠키값을_헤더로_보내면_된다() {
         String loginId = newLoginId();
-        createUser(loginId, "OPERATOR", true, false);
+        createUser(loginId, "OPERATOR_BASIC", true, false);
 
         MvcTestResult withoutToken = mvc.post()
                 .uri("/api/v1/user/login")
@@ -205,7 +230,7 @@ class AuthApiTest {
     @Test
     void 로그아웃하면_세션이_끝나_같은_쿠키로_401() {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "OPERATOR", true, false);
+        UUID id = createUser(loginId, "OPERATOR_BASIC", true, false);
         Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
 
         MvcTestResult logout = mvc.post()
@@ -223,7 +248,7 @@ class AuthApiTest {
     @Test
     void INV80_로그인한_뒤_tokens_valid_after가_기록되면_세션을_끊고_401() {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "OPERATOR", true, false);
+        UUID id = createUser(loginId, "OPERATOR_BASIC", true, false);
         Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
         jdbc.sql("UPDATE auth.users SET tokens_valid_after = now() + interval '1 second' WHERE id = :id")
                 .param("id", id)
@@ -239,7 +264,7 @@ class AuthApiTest {
     @Test
     void INV80_tokens_valid_after보다_나중에_로그인한_세션은_쓸_수_있다() {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "OPERATOR", true, false);
+        UUID id = createUser(loginId, "OPERATOR_BASIC", true, false);
         jdbc.sql("UPDATE auth.users SET tokens_valid_after = now() WHERE id = :id")
                 .param("id", id)
                 .update();
@@ -251,10 +276,10 @@ class AuthApiTest {
     @Test
     void 로그인한_뒤_사용_중지되거나_삭제되면_401() {
         String inactiveId = newLoginId();
-        UUID inactive = createUser(inactiveId, "OPERATOR", true, false);
+        UUID inactive = createUser(inactiveId, "OPERATOR_BASIC", true, false);
         Cookie inactiveSession = login(inactiveId, PASSWORD).getResponse().getCookie("SESSION");
         String deletedId = newLoginId();
-        UUID deleted = createUser(deletedId, "OPERATOR", true, false);
+        UUID deleted = createUser(deletedId, "OPERATOR_BASIC", true, false);
         Cookie deletedSession = login(deletedId, PASSWORD).getResponse().getCookie("SESSION");
 
         jdbc.sql("UPDATE auth.users SET is_active = false WHERE id = :id")
@@ -273,7 +298,7 @@ class AuthApiTest {
     @Test
     void 비밀번호를_바꿔야_하면_내_정보와_로그아웃만_되고_나머지는_403_PASSWORD_CHANGE_REQUIRED() {
         String loginId = newLoginId();
-        createUser(loginId, "OPERATOR", true, true);
+        createUser(loginId, "OPERATOR_BASIC", true, true);
         MvcTestResult login = login(loginId, PASSWORD);
         Cookie session = login.getResponse().getCookie("SESSION");
         assertThat(login).bodyJson().extractingPath("$.data.mustChangePassword").isEqualTo(true);
@@ -295,7 +320,7 @@ class AuthApiTest {
     @Test
     void 로그인_전에_있던_세션은_로그인하면_ID가_바뀐다() {
         String loginId = newLoginId();
-        createUser(loginId, "OPERATOR", true, false);
+        createUser(loginId, "OPERATOR_BASIC", true, false);
         Cookie before = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
 
         MvcTestResult again = mvc.post()
@@ -316,7 +341,7 @@ class AuthApiTest {
     @Test
     void 비밀번호를_바꾸면_새_비밀번호로만_로그인되고_변경_필요_상태가_풀린다() {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "OPERATOR", true, true);
+        UUID id = createUser(loginId, "OPERATOR_BASIC", true, true);
         Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
 
         MvcTestResult change = changePassword(session, PASSWORD, "새-비밀번호");
@@ -338,7 +363,7 @@ class AuthApiTest {
     @Test
     void INV80_비밀번호를_바꾸면_이_세션과_다른_PC의_세션이_모두_끊긴다() {
         String loginId = newLoginId();
-        UUID id = createUser(loginId, "OPERATOR", true, false);
+        UUID id = createUser(loginId, "OPERATOR_BASIC", true, false);
         Cookie mine = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
         Cookie otherPc = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
 
@@ -352,7 +377,7 @@ class AuthApiTest {
     @Test
     void 지금_비밀번호가_틀리면_400_PASSWORD_MISMATCH이고_비밀번호와_세션은_그대로다() {
         String loginId = newLoginId();
-        createUser(loginId, "OPERATOR", true, true);
+        createUser(loginId, "OPERATOR_BASIC", true, true);
         Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
 
         MvcTestResult change = changePassword(session, "wrong", "새-비밀번호");
@@ -369,7 +394,7 @@ class AuthApiTest {
     @Test
     void 지금_비밀번호와_같아도_바꿀_수_있다_비밀번호_규칙은_빈_값만_막는다() {
         String loginId = newLoginId();
-        createUser(loginId, "OPERATOR", true, true);
+        createUser(loginId, "OPERATOR_BASIC", true, true);
         Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
 
         assertThat(changePassword(session, PASSWORD, PASSWORD)).hasStatus(HttpStatus.OK);
@@ -382,7 +407,7 @@ class AuthApiTest {
     @Test
     void 새_비밀번호가_비거나_72바이트를_넘으면_400_VALIDATION_FAILED() {
         String loginId = newLoginId();
-        createUser(loginId, "OPERATOR", true, false);
+        createUser(loginId, "OPERATOR_BASIC", true, false);
         Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
 
         MvcTestResult blank = changePassword(session, PASSWORD, " ");
@@ -407,7 +432,7 @@ class AuthApiTest {
     @Test
     void 비밀번호_변경도_로그인과_CSRF_토큰이_필요하다() {
         String loginId = newLoginId();
-        createUser(loginId, "OPERATOR", true, false);
+        createUser(loginId, "OPERATOR_BASIC", true, false);
         Cookie session = login(loginId, PASSWORD).getResponse().getCookie("SESSION");
 
         MvcTestResult noLogin = mvc.post()
@@ -475,30 +500,20 @@ class AuthApiTest {
         return "u" + UUID.randomUUID().toString().substring(0, 8);
     }
 
-    private UUID createUser(
-            String loginId, String role, boolean active, boolean mustChangePassword, String... permissions) {
-        UUID id = jdbc.sql("""
-                        INSERT INTO auth.users (login_id, name, password_hash, is_active, must_change_password, created_by)
-                        VALUES (:loginId, '테스트', :hash, :active, :mustChange, uuidv7())
+    private UUID createUser(String loginId, String roleCode, boolean active, boolean mustChangePassword) {
+        return jdbc.sql("""
+                        INSERT INTO auth.users (login_id, name, password_hash, is_active, must_change_password, role_id, created_by)
+                        SELECT :loginId, '테스트', :hash, :active, :mustChange, r.id, uuidv7()
+                        FROM auth.roles r WHERE r.code = :roleCode AND r.deleted_at IS NULL
                         RETURNING id
                         """)
                 .param("loginId", loginId)
                 .param("hash", passwordEncoder.encode(PASSWORD))
                 .param("active", active)
                 .param("mustChange", mustChangePassword)
+                .param("roleCode", roleCode)
                 .query(UUID.class)
                 .single();
-        jdbc.sql("INSERT INTO auth.user_roles (user_id, role_id) SELECT :id, id FROM auth.roles WHERE code = :role")
-                .param("id", id)
-                .param("role", role)
-                .update();
-        for (String permission : permissions) {
-            jdbc.sql("INSERT INTO auth.user_permissions (user_id, permission) VALUES (:id, :permission)")
-                    .param("id", id)
-                    .param("permission", permission)
-                    .update();
-        }
-        return id;
     }
 
     private boolean lastLoginAtIsSet(UUID id) {

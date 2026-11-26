@@ -111,12 +111,13 @@
 | 테이블 | 컬럼 | 설명 |
 |---|---|---|
 | permissions | code varchar(30) PK, name varchar(50), description varchar(200), sort_order smallint | 권한 13개. 마이그레이션으로만 넣고 화면에서 바꾸지 않는다(코드가 권한을 검사하므로). 코드의 권한 목록과 같은지 테스트한다 |
-| roles | id uuid PK, code varchar(30), name varchar(50), description varchar(200) Y, [AUD], [DEL], version | 역할. code는 만든 뒤 바꾸지 않고 대문자·숫자·밑줄(`^[A-Z][A-Z0-9_]*$`). code·name은 삭제된 것을 빼고 겹치지 않는다(`ux_roles_code`, `ux_roles_name`, 부분 유니크). 기본 역할 6개를 마이그레이션으로 넣는다: ADMIN 관리자, OPERATOR_BASIC 일반 운영자, OPERATOR_COST_VIEW 영업 운영자, OPERATOR_COST_EDIT 정산 운영자, USER_BASIC 일반 사용자, USER_COST_VIEW 회계 사용자 |
+| roles | id uuid PK, code varchar(30), name varchar(50), description varchar(200) Y, [AUD], [DEL], version | 역할. code는 만든 뒤 바꾸지 않고 대문자·숫자·밑줄(`^[A-Z][A-Z0-9_]*$`). code·name은 삭제된 것을 빼고 겹치지 않는다(`ux_roles_code`, `ux_roles_name`, 부분 유니크). 기본 역할 6개를 마이그레이션으로 넣는다: ADMIN 관리자, OPERATOR_BASIC 일반 운영자, OPERATOR_COST_VIEW 영업 운영자, OPERATOR_COST_EDIT 정산 운영자, USER_BASIC 일반 사용자, USER_COST_VIEW 회계 사용자. 코드 형식은 `ck_roles_code`로 DB에서도 막는다. 기본 역할은 만든 사람이 없어 `created_by`가 NULL이다(roles만 created_by NULL 허용) |
 | role_permissions | role_id FK roles, permission_code FK permissions (PK 복합) | 역할에 넣은 권한. ADMIN은 13개 전부이고 바꿀 수 없다(서비스에서 막음). COST_EDIT이 있으면 COST_VIEW도 있다(서비스에서 검사, INV-88) |
 
 - users에 `role_id uuid NOT NULL FK roles`를 더한다(3.1). 인덱스 `ix_users_role_id`(역할 삭제 전 사용 중인지 확인, R4).
 - 역할 삭제는 소프트 삭제다(#102). 그 역할인 계정(삭제된 계정 제외)이 있으면 지울 수 없다.
 - 관리자 역할 판별은 code `ADMIN`으로 한다(따로 표시 컬럼을 두지 않는다. 잠그는 역할이 하나뿐이다).
+- V5 마이그레이션(2026-11-26)이 예전 계정을 옮긴다: 관리자 → ADMIN, 입력자 → 금액 권한에 따라 OPERATOR_BASIC·OPERATOR_COST_VIEW·OPERATOR_COST_EDIT, 조회자 → USER_BASIC 또는 금액 권한이 있으면 USER_COST_VIEW, 역할 없음 → USER_BASIC. 역할이 여럿이면 가장 큰 것.
 
 ### 3.2.1 auth.spring_session / spring_session_attributes — 로그인 세션 (2026-11-25, `oauth2_authorization`을 바꿈)
 

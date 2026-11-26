@@ -7,6 +7,7 @@ import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -16,6 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import kr.co.unipoint.asset.support.TestLogins;
 import kr.co.unipoint.asset.support.TestcontainersConfiguration;
+import kr.co.unipoint.asset.user.Permission;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,8 +54,8 @@ class CurrencyApiTest {
     }
 
     @Test
-    void 목록은_조회자도_보고_코드_순이며_처음에는_원화_켜짐_달러_꺼짐() throws Exception {
-        Cookie viewer = logins.loginAs("VIEWER");
+    void 목록은_일반_사용자도_보고_코드_순이며_처음에는_원화_켜짐_달러_꺼짐() throws Exception {
+        Cookie viewer = logins.loginAs("USER_BASIC");
 
         MvcTestResult result =
                 mvc.get().uri("/api/v1/cost/currency").cookie(viewer).exchange();
@@ -77,7 +79,7 @@ class CurrencyApiTest {
 
     @Test
     void 목록은_isActive로_거른다() throws Exception {
-        Cookie viewer = logins.loginAs("VIEWER");
+        Cookie viewer = logins.loginAs("USER_BASIC");
 
         MvcTestResult active = mvc.get()
                 .uri("/api/v1/cost/currency")
@@ -202,9 +204,10 @@ class CurrencyApiTest {
     }
 
     @Test
-    void 입력자와_조회자는_추가_수정이_403_FORBIDDEN() {
-        for (String role : List.of("OPERATOR", "VIEWER")) {
-            Cookie session = logins.loginAs(role, "COST_VIEW");
+    void MASTER_MANAGE가_없는_기본_역할은_추가_수정이_403_FORBIDDEN() {
+        for (String role :
+                List.of("OPERATOR_BASIC", "OPERATOR_COST_VIEW", "OPERATOR_COST_EDIT", "USER_BASIC", "USER_COST_VIEW")) {
+            Cookie session = logins.loginAs(role);
 
             MvcTestResult added = add(session, "{\"code\":\"GBP\",\"name\":\"영국 파운드\",\"minorUnit\":2}");
             MvcTestResult updated = update(session, "USD", "{\"isActive\":true}");
@@ -224,12 +227,28 @@ class CurrencyApiTest {
     }
 
     @Test
-    void 금액_수정_권한이_있는_입력자도_추가는_403() {
-        Cookie operator = logins.loginAs("OPERATOR", "COST_VIEW", "COST_EDIT");
+    void MASTER_MANAGE_하나만_빠지면_다른_권한이_모두_있어도_403() {
+        String[] allButMaster = Arrays.stream(Permission.values())
+                .filter(p -> p != Permission.MASTER_MANAGE)
+                .map(Enum::name)
+                .toArray(String[]::new);
+        Cookie session = logins.loginWithPermissions(allButMaster);
 
-        MvcTestResult result = add(operator, "{\"code\":\"GBP\",\"name\":\"영국 파운드\",\"minorUnit\":2}");
+        MvcTestResult result = add(session, "{\"code\":\"GBP\",\"name\":\"영국 파운드\",\"minorUnit\":2}");
 
         assertThat(result).hasStatus(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void 관리자_역할이_아니어도_MASTER_MANAGE가_있으면_추가_수정된다() {
+        Cookie session = logins.loginWithPermissions("MASTER_MANAGE");
+
+        // 다른 테스트가 보는 GBP·USD는 건드리지 않는다
+        MvcTestResult added = add(session, "{\"code\":\"AUD\",\"name\":\"호주 달러\",\"minorUnit\":2}");
+        MvcTestResult updated = update(session, "AUD", "{\"name\":\"호주 달러화\"}");
+
+        assertThat(added).hasStatus(HttpStatus.CREATED);
+        assertThat(updated).hasStatus(HttpStatus.OK);
     }
 
     @Test

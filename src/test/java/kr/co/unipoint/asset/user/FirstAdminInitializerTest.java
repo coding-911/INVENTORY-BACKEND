@@ -34,8 +34,7 @@ class FirstAdminInitializerTest {
         jdbc.sql("""
                         UPDATE auth.users SET deleted_at = now(), deleted_by = id
                         WHERE deleted_at IS NULL
-                          AND id IN (SELECT ur.user_id FROM auth.user_roles ur JOIN auth.roles r ON r.id = ur.role_id
-                                     WHERE r.code = 'ADMIN')
+                          AND role_id = (SELECT id FROM auth.roles WHERE code = 'ADMIN')
                         """).update();
 
         runAll();
@@ -44,8 +43,7 @@ class FirstAdminInitializerTest {
         List<Map<String, Object>> admins = jdbc.sql("""
                         SELECT u.id, u.created_by, u.password_hash, u.must_change_password, u.is_active
                         FROM auth.users u
-                        JOIN auth.user_roles ur ON ur.user_id = u.id
-                        JOIN auth.roles r ON r.id = ur.role_id
+                        JOIN auth.roles r ON r.id = u.role_id
                         WHERE r.code = 'ADMIN' AND u.login_id = 'first-admin' AND u.deleted_at IS NULL
                         """).query().listOfRows();
         assertThat(admins).hasSize(1);

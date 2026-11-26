@@ -17,7 +17,7 @@ import org.springframework.data.domain.Persistable;
  * 통화 ({@code cost.currencies}, 테이블 정의서 cost). 금액 기록이 코드로 가리키므로 삭제하지 않고 끈다. 코드·소수 자리는 바꾸지 않는다 (API 명세서
  * 1.9, API 목록 "통화 수정").
  *
- * <p>감사 컬럼·{@code version}이 없는 코드 표다(관리자만 드물게 바꿈, 1.9). id가 통화 코드라 새로 만든 것인지 스스로 알려 준다({@link
+ * <p>감사 컬럼·{@code version}이 없는 코드 표다({@code MASTER_MANAGE}만 드물게 바꿈, 1.9). id가 통화 코드라 새로 만든 것인지 스스로 알려 준다({@link
  * Persistable}). 그러지 않으면 저장할 때 같은 코드의 기존 행을 덮어쓸 수 있다.
  */
 @Entity

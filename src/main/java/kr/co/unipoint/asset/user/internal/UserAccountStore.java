@@ -8,21 +8,25 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import kr.co.unipoint.asset.user.internal.LoginService.RoleRef;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
-/** 로그인에 필요한 {@code auth} 스키마 읽기·쓰기 (docs/db/table-definition.md 3절). 삭제된 사용자는 없는 것으로 본다. */
+/**
+ * 로그인에 필요한 {@code auth} 스키마 읽기·쓰기 (docs/db/table-definition.md 3절). 삭제된 사용자는 없는 것으로 본다.
+ *
+ * <p>계정의 권한은 그 역할의 권한이다(확정 사항 #106). 역할이 삭제돼도 그 역할인 계정은 없으므로(R4) 역할의 삭제 여부는 보지 않는다.
+ */
 @Component
 class UserAccountStore {
 
     private static final String ACCOUNT_COLUMNS = """
             SELECT u.id, u.login_id, u.name, u.password_hash, u.is_active, u.must_change_password, u.tokens_valid_after,
-                   ARRAY(SELECT r.code FROM auth.user_roles ur JOIN auth.roles r ON r.id = ur.role_id
-                         WHERE ur.user_id = u.id ORDER BY r.code) AS roles,
-                   ARRAY(SELECT p.permission FROM auth.user_permissions p
-                         WHERE p.user_id = u.id ORDER BY p.permission) AS permissions
+                   r.id AS role_id, r.code AS role_code, r.name AS role_name,
+                   ARRAY(SELECT p.code FROM auth.role_permissions rp JOIN auth.permissions p ON p.code = rp.permission_code
+                         WHERE rp.role_id = r.id ORDER BY p.sort_order) AS permissions
             FROM auth.users u
+            JOIN auth.roles r ON r.id = u.role_id
             """;
 
     private final JdbcClient jdbc;
@@ -38,7 +42,7 @@ class UserAccountStore {
                 .optional();
     }
 
-    /** 로그인할 때와 요청마다 세션을 확인할 때({@link SessionCheckFilter}) 쓴다. 기본 키와 user_id 인덱스로 읽는다. */
+    /** 로그인할 때와 요청마다 세션을 확인할 때({@link SessionCheckFilter}) 쓴다. 기본 키(users·roles·role_permissions)로 읽는다. */
     Optional<Account> findById(UUID id) {
         return jdbc.sql(ACCOUNT_COLUMNS + "WHERE u.id = :id AND u.deleted_at IS NULL")
                 .param("id", id)
@@ -76,8 +80,7 @@ class UserAccountStore {
         return jdbc.sql("""
                         SELECT EXISTS (
                             SELECT 1 FROM auth.users u
-                            JOIN auth.user_roles ur ON ur.user_id = u.id
-                            JOIN auth.roles r ON r.id = ur.role_id
+                            JOIN auth.roles r ON r.id = u.role_id
                             WHERE r.code = 'ADMIN' AND u.is_active AND u.deleted_at IS NULL)
                         """).query(Boolean.class).single();
     }
@@ -90,12 +93,12 @@ class UserAccountStore {
     }
 
     /** 첫 관리자. 만든 사람이 없으므로 {@code created_by}는 자기 ID다. 처음 로그인하면 비밀번호를 바꿔야 한다. */
-    @Transactional
     UUID createFirstAdmin(String loginId, String name, String passwordHash) {
-        UUID id = jdbc.sql("""
+        return jdbc.sql("""
                         WITH new_user AS (SELECT uuidv7() AS id)
-                        INSERT INTO auth.users (id, login_id, name, password_hash, must_change_password, created_by)
-                        SELECT id, :loginId, :name, :passwordHash, true, id FROM new_user
+                        INSERT INTO auth.users (id, login_id, name, password_hash, must_change_password, role_id, created_by)
+                        SELECT n.id, :loginId, :name, :passwordHash, true, r.id, n.id
+                        FROM new_user n JOIN auth.roles r ON r.code = 'ADMIN' AND r.deleted_at IS NULL
                         RETURNING id
                         """)
                 .param("loginId", loginId)
@@ -103,11 +106,6 @@ class UserAccountStore {
                 .param("passwordHash", passwordHash)
                 .query(UUID.class)
                 .single();
-        jdbc.sql("""
-                        INSERT INTO auth.user_roles (user_id, role_id)
-                        SELECT :id, id FROM auth.roles WHERE code = 'ADMIN'
-                        """).param("id", id).update();
-        return id;
     }
 
     private static Account account(ResultSet rs, int rowNum) throws SQLException {
@@ -119,7 +117,7 @@ class UserAccountStore {
                 rs.getBoolean("is_active"),
                 rs.getBoolean("must_change_password"),
                 toInstant(rs.getObject("tokens_valid_after", OffsetDateTime.class)),
-                strings(rs.getArray("roles")),
+                new RoleRef(rs.getObject("role_id", UUID.class), rs.getString("role_code"), rs.getString("role_name")),
                 strings(rs.getArray("permissions")));
     }
 
@@ -133,6 +131,7 @@ class UserAccountStore {
 
     /**
      * @param tokensValidAfter 이보다 먼저 로그인한 세션은 끊는다 (INV-80). 없으면 null
+     * @param permissions 역할의 권한 코드, 권한 목록 순서
      */
     record Account(
             UUID id,
@@ -142,7 +141,7 @@ class UserAccountStore {
             boolean active,
             boolean mustChangePassword,
             Instant tokensValidAfter,
-            List<String> roles,
+            RoleRef role,
             List<String> permissions) {
 
         /** 사용 중이고, 로그인한 뒤 권한·비밀번호 등이 바뀌지 않았으면 그 세션을 계속 쓸 수 있다. */
@@ -151,7 +150,7 @@ class UserAccountStore {
         }
 
         LoginUser toLoginUser(Instant loginAt) {
-            return new LoginUser(id, loginId, name, roles, permissions, loginAt);
+            return new LoginUser(id, loginId, name, permissions, loginAt);
         }
     }
 }
