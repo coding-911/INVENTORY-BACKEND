@@ -22,7 +22,7 @@
 | 파일 | 용도 | 내용 |
 |---|---|---|
 | `asset_v1_create.sql` | ① 처음 생성용 (개발·테스트 DB) | 스키마, 테이블, PK·FK·NOT NULL·기본값, 조회 인덱스, 주석, 초기 데이터 + 핵심 제약 26개 |
-| `asset_v2_constraints.sql` | ② 추후 수정용 (서비스 테스트 후) | v1에서 미룬 제약 109개(코드 목록 CHECK, 조건부 CHECK, 업무 키 UNIQUE, 부분 유니크) + 보강 제안 P1–P5 11건을 ALTER로 추가 |
+| `asset_v2_constraints.sql` | ② 추후 수정용 (서비스 테스트 후) | v1에서 미룬 제약 109개(2026-11-26 V5와 맞지 않는 auth 제약 2개를 빼 107개, 코드 목록 CHECK, 조건부 CHECK, 업무 키 UNIQUE, 부분 유니크) + 보강 제안 P1–P5 11건을 ALTER로 추가 |
 | `asset_prod_full.sql` | ③ 운영 최종본 | v1 + v2를 한 파일로 합친 것. 운영 DB를 처음 만들 때 이 파일만 실행하고, Flyway 도입 시 기준선(baseline)으로 삼는다 |
 | `asset_schema_erdcloud_mysql.sql` | ERDCloud 가져오기용 | MySQL 문법. DB 생성에는 쓰지 않는다 ([ERD](https://app.notion.com/p/0f6b5085ff894ff79cdce72b84e74cc4) 2절) |
 

@@ -25,3 +25,4 @@ export PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=...   # PostgreSQ
 
 - `verify.sh`·`run_check_tests.sh`는 검증용 DB(`dba`, `dbb`, `dbc`, `dbv1`, `dbt`)를 지웠다 다시 만든다. 운영·개발 DB 서버에서 실행하지 않는다.
 - 2026-11-24 기준 결과: 테이블 54, 컬럼 639, 외래 키 102, 핵심 제약 26, v2 제약 109, 보강 제안 11. 생성 결과는 `docs/db/ddl/`과 바이트 단위로 같다.
+- 2026-11-26: `docs/db/ddl/asset_v2_constraints.sql`에서 `uq_roles_code`·`ck_user_permissions_1`을 손으로 뺐다. Flyway V5(역할·권한 체계, #106)가 user_permissions를 지우고 roles에 부분 유니크를 걸었기 때문이다. 그래서 이 파일은 더 이상 gen3.py 생성 결과와 같지 않다. v2는 나중에 Flyway 마이그레이션으로 옮겨 적용한다(CLAUDE.md 4절).

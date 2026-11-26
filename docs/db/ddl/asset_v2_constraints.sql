@@ -7,16 +7,17 @@
 -- 주의: ADD CONSTRAINT는 기존 데이터를 검사한다. 위반 데이터가 있으면 실패하고
 --       전체가 롤백되므로, 실패 메시지의 제약 이름으로 데이터를 정리한 뒤 다시 실행한다.
 --       협의 결과로 코드 목록이 바뀌었으면 gen.py를 고쳐 다시 생성한 뒤 적용한다.
+-- 수정: 2026-11-26 auth 제약 2개를 손으로 뺐다(V5 역할·권한 체계). Flyway V1–V5를 적용한 DB에서
+--       이 파일 전체가 오류 없이 적용되는 것을 확인했다. 이제 gen3.py 생성 결과와 같지 않다(tools/ddl/README.md).
 -- ============================================================
 
 BEGIN;
 
 -- ---------------------------------------------------------------- v1에서 미룬 제약
--- auth.roles — 역할
-ALTER TABLE auth.roles ADD CONSTRAINT uq_roles_code UNIQUE (code);
-
--- auth.user_permissions — 사용자 추가 권한
-ALTER TABLE auth.user_permissions ADD CONSTRAINT ck_user_permissions_1 CHECK (permission IN ('COST_VIEW', 'COST_EDIT'));
+-- auth.roles — 역할: uq_roles_code는 2026-11-26 뺐다. V5 마이그레이션이 삭제된 역할을 뺀 부분 유니크
+--   ux_roles_code(와 ux_roles_name)를 이미 건다. 같은 코드의 삭제된 역할이 있으면 이 제약은 오히려 실패한다.
+-- auth.user_permissions — ck_user_permissions_1은 2026-11-26 뺐다. V5가 이 테이블을 지웠다(권한은 role_permissions,
+--   권한 코드는 auth.permissions FK로 막는다). 확정 사항 #106.
 
 -- product.product_categories — 품목군
 CREATE UNIQUE INDEX ux_product_categories_code ON product.product_categories (code) WHERE deleted_at IS NULL;
