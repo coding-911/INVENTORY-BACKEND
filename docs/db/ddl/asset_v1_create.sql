@@ -1,9 +1,10 @@
 -- ============================================================
 -- 자산관리 시스템 PostgreSQL DDL — ① 처음 생성용 (v1)
--- 생성: 2026-11-24 / 기준: 노션 '테이블 정의서', '불변 조건 목록'
+-- 생성: 2026-11-26 / 기준: 노션 '테이블 정의서', '불변 조건 목록'
 -- 대상: PostgreSQL 18 이상 (uuidv7(), UNIQUE NULLS NOT DISTINCT 사용)
 -- 포함: 스키마, 테이블, PK, FK, NOT NULL, 기본값, 조회 인덱스, 주석, 초기 데이터
 --       + 핵심 제약(서비스 로직이 기대는 키, 원장 보호, 수량 안전망) — 파일 끝 목록 참고
+-- 구조: Flyway V1~V5를 적용한 DB와 같다(verify.sh로 비교). 이후 DB 변경은 새 Flyway 마이그레이션으로 한다
 -- 제외: 코드 목록 CHECK, 조건부 CHECK, 업무 키 UNIQUE, 보강 제안 P1~P5
 --       → 서비스 테스트를 마친 뒤 asset_v2_constraints.sql로 추가한다
 -- ============================================================
@@ -43,63 +44,55 @@ CREATE TABLE auth.users (
     version integer NOT NULL DEFAULT 0,
     deleted_at timestamptz,
     deleted_by uuid,
+    role_id uuid NOT NULL,
     CONSTRAINT pk_users PRIMARY KEY (id)
+);
+
+CREATE TABLE auth.permissions (
+    code varchar(30) NOT NULL,
+    name varchar(50) NOT NULL,
+    description varchar(200) NOT NULL,
+    sort_order smallint NOT NULL,
+    CONSTRAINT pk_permissions PRIMARY KEY (code)
 );
 
 CREATE TABLE auth.roles (
     id uuid NOT NULL DEFAULT uuidv7(),
     code varchar(30) NOT NULL,
-    name varchar(100) NOT NULL,
+    name varchar(50) NOT NULL,
+    description varchar(200),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    created_by uuid,
+    updated_at timestamptz,
+    updated_by uuid,
+    version integer NOT NULL DEFAULT 0,
+    deleted_at timestamptz,
+    deleted_by uuid,
     CONSTRAINT pk_roles PRIMARY KEY (id)
 );
 
-CREATE TABLE auth.user_roles (
-    user_id uuid NOT NULL,
+CREATE TABLE auth.role_permissions (
     role_id uuid NOT NULL,
-    CONSTRAINT pk_user_roles PRIMARY KEY (user_id, role_id)
+    permission_code varchar(30) NOT NULL,
+    CONSTRAINT pk_role_permissions PRIMARY KEY (role_id, permission_code)
 );
 
-CREATE TABLE auth.user_permissions (
-    user_id uuid NOT NULL,
-    permission varchar(30) NOT NULL,
-    CONSTRAINT pk_user_permissions PRIMARY KEY (user_id, permission)
+CREATE TABLE auth.spring_session (
+    primary_id char(36) NOT NULL,
+    session_id char(36) NOT NULL,
+    creation_time bigint NOT NULL,
+    last_access_time bigint NOT NULL,
+    max_inactive_interval integer NOT NULL,
+    expiry_time bigint NOT NULL,
+    principal_name varchar(100),
+    CONSTRAINT pk_spring_session PRIMARY KEY (primary_id)
 );
 
-CREATE TABLE auth.oauth2_authorization (
-    id varchar(100) NOT NULL,
-    registered_client_id varchar(100) NOT NULL,
-    principal_name varchar(200) NOT NULL,
-    authorization_grant_type varchar(100) NOT NULL,
-    authorized_scopes varchar(1000),
-    attributes text,
-    state varchar(500),
-    authorization_code_value text,
-    authorization_code_issued_at timestamp,
-    authorization_code_expires_at timestamp,
-    authorization_code_metadata text,
-    access_token_value text,
-    access_token_issued_at timestamp,
-    access_token_expires_at timestamp,
-    access_token_metadata text,
-    access_token_type varchar(100),
-    access_token_scopes varchar(1000),
-    oidc_id_token_value text,
-    oidc_id_token_issued_at timestamp,
-    oidc_id_token_expires_at timestamp,
-    oidc_id_token_metadata text,
-    refresh_token_value text,
-    refresh_token_issued_at timestamp,
-    refresh_token_expires_at timestamp,
-    refresh_token_metadata text,
-    user_code_value text,
-    user_code_issued_at timestamp,
-    user_code_expires_at timestamp,
-    user_code_metadata text,
-    device_code_value text,
-    device_code_issued_at timestamp,
-    device_code_expires_at timestamp,
-    device_code_metadata text,
-    CONSTRAINT pk_oauth2_authorization PRIMARY KEY (id)
+CREATE TABLE auth.spring_session_attributes (
+    session_primary_id char(36) NOT NULL,
+    attribute_name varchar(200) NOT NULL,
+    attribute_bytes bytea NOT NULL,
+    CONSTRAINT pk_spring_session_attributes PRIMARY KEY (session_primary_id, attribute_name)
 );
 
 CREATE TABLE product.product_categories (
@@ -855,7 +848,7 @@ CREATE TABLE common.idempotency_keys (
     request_hash varchar(64) NOT NULL,
     status varchar(20) NOT NULL DEFAULT 'IN_PROGRESS',
     response_status integer,
-    response_body jsonb,
+    response_body json,
     created_at timestamptz NOT NULL DEFAULT now(),
     completed_at timestamptz,
     CONSTRAINT pk_idempotency_keys PRIMARY KEY (idempotency_key)
@@ -903,9 +896,10 @@ CREATE TABLE admin.integrity_check_results (
 );
 
 -- ---------------------------------------------------------------- 외래 키
-ALTER TABLE auth.user_roles ADD CONSTRAINT fk_user_roles_user_id FOREIGN KEY (user_id) REFERENCES auth.users (id);
-ALTER TABLE auth.user_roles ADD CONSTRAINT fk_user_roles_role_id FOREIGN KEY (role_id) REFERENCES auth.roles (id);
-ALTER TABLE auth.user_permissions ADD CONSTRAINT fk_user_permissions_user_id FOREIGN KEY (user_id) REFERENCES auth.users (id);
+ALTER TABLE auth.users ADD CONSTRAINT fk_users_role_id FOREIGN KEY (role_id) REFERENCES auth.roles (id);
+ALTER TABLE auth.role_permissions ADD CONSTRAINT fk_role_permissions_role_id FOREIGN KEY (role_id) REFERENCES auth.roles (id);
+ALTER TABLE auth.role_permissions ADD CONSTRAINT fk_role_permissions_permission_code FOREIGN KEY (permission_code) REFERENCES auth.permissions (code);
+ALTER TABLE auth.spring_session_attributes ADD CONSTRAINT fk_spring_session_attributes_session_primary_id FOREIGN KEY (session_primary_id) REFERENCES auth.spring_session (primary_id) ON DELETE CASCADE;
 ALTER TABLE product.products ADD CONSTRAINT fk_products_category_id FOREIGN KEY (category_id) REFERENCES product.product_categories (id);
 ALTER TABLE product.product_changes ADD CONSTRAINT fk_product_changes_product_id FOREIGN KEY (product_id) REFERENCES product.products (id);
 ALTER TABLE product.bundle_components ADD CONSTRAINT fk_bundle_components_bundle_id FOREIGN KEY (bundle_id) REFERENCES product.bundles (id);
@@ -1007,9 +1001,9 @@ ALTER TABLE cost.opening_costs ADD CONSTRAINT fk_opening_costs_ledger_entry_id F
 ALTER TABLE cost.opening_costs ADD CONSTRAINT fk_opening_costs_currency FOREIGN KEY (currency) REFERENCES cost.currencies (code);
 
 -- ---------------------------------------------------------------- 조회 인덱스
-CREATE INDEX ix_user_roles_user_id ON auth.user_roles (user_id);
-CREATE INDEX ix_user_roles_role_id ON auth.user_roles (role_id);
-CREATE INDEX ix_user_permissions_user_id ON auth.user_permissions (user_id);
+CREATE INDEX ix_users_role_id ON auth.users (role_id);
+CREATE INDEX ix_spring_session_expiry_time ON auth.spring_session (expiry_time);
+CREATE INDEX ix_spring_session_principal_name ON auth.spring_session (principal_name);
 CREATE INDEX ix_products_category_id ON product.products (category_id);
 CREATE INDEX ix_product_changes_product_id ON product.product_changes (product_id);
 CREATE INDEX ix_bundle_components_bundle_id ON product.bundle_components (bundle_id);
@@ -1122,6 +1116,14 @@ CREATE INDEX ix_notifications_recipient_user_id_read_at ON admin.notifications (
 -- ---------------------------------------------------------------- 핵심 제약 (트리거·부분 유니크)
 -- 로그인 ID로 사용자 1명을 찾는다(삭제된 계정 제외)
 CREATE UNIQUE INDEX ux_users_login_id ON auth.users (login_id) WHERE deleted_at IS NULL;
+-- 역할 코드는 대문자·숫자·밑줄(V5, #106)
+ALTER TABLE auth.roles ADD CONSTRAINT ck_roles_code CHECK (code ~ '^[A-Z][A-Z0-9_]*$');
+-- 역할 코드는 삭제된 것을 빼고 하나(V5, #106)
+CREATE UNIQUE INDEX ux_roles_code ON auth.roles (code) WHERE deleted_at IS NULL;
+-- 역할 이름은 삭제된 것을 빼고 하나(V5, #106)
+CREATE UNIQUE INDEX ux_roles_name ON auth.roles (name) WHERE deleted_at IS NULL;
+-- 세션 ID로 세션 1개를 찾는다(V3, Spring Session JDBC)
+CREATE UNIQUE INDEX ux_spring_session_session_id ON auth.spring_session (session_id);
 -- 원장 수정·삭제 차단 함수(INV-01)
 CREATE OR REPLACE FUNCTION inventory.fn_ledger_entries_append_only()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -1147,7 +1149,7 @@ COMMENT ON COLUMN auth.users.email IS '이메일';
 COMMENT ON COLUMN auth.users.password_hash IS '비밀번호 해시';
 COMMENT ON COLUMN auth.users.is_active IS '사용 여부';
 COMMENT ON COLUMN auth.users.last_login_at IS '마지막 로그인';
-COMMENT ON COLUMN auth.users.tokens_valid_after IS '토큰 무효 기준 시각';
+COMMENT ON COLUMN auth.users.tokens_valid_after IS '세션 무효 기준 시각. 이보다 먼저 로그인한 세션은 끊는다';
 COMMENT ON COLUMN auth.users.must_change_password IS '다음 로그인 때 비밀번호 변경 필요';
 COMMENT ON COLUMN auth.users.created_at IS '생성 시각';
 COMMENT ON COLUMN auth.users.created_by IS '생성자';
@@ -1156,50 +1158,39 @@ COMMENT ON COLUMN auth.users.updated_by IS '수정자';
 COMMENT ON COLUMN auth.users.version IS '버전(낙관적 잠금)';
 COMMENT ON COLUMN auth.users.deleted_at IS '삭제 시각';
 COMMENT ON COLUMN auth.users.deleted_by IS '삭제자';
+COMMENT ON COLUMN auth.users.role_id IS '역할 (계정마다 하나)';
+COMMENT ON TABLE auth.permissions IS '권한 (시스템이 정함, 화면에서 추가·삭제하지 않음)';
+COMMENT ON COLUMN auth.permissions.code IS '권한 코드';
+COMMENT ON COLUMN auth.permissions.name IS '권한 이름';
+COMMENT ON COLUMN auth.permissions.description IS '이 권한으로 할 수 있는 일';
+COMMENT ON COLUMN auth.permissions.sort_order IS '보여 주는 순서';
 COMMENT ON TABLE auth.roles IS '역할';
 COMMENT ON COLUMN auth.roles.id IS 'ID (UUID v7, 앱에서 생성. DB 기본값도 v7, PostgreSQL 18)';
-COMMENT ON COLUMN auth.roles.code IS '역할 코드';
-COMMENT ON COLUMN auth.roles.name IS '역할명';
-COMMENT ON TABLE auth.user_roles IS '사용자 역할';
-COMMENT ON COLUMN auth.user_roles.user_id IS '사용자';
-COMMENT ON COLUMN auth.user_roles.role_id IS '역할';
-COMMENT ON TABLE auth.user_permissions IS '사용자 추가 권한';
-COMMENT ON COLUMN auth.user_permissions.user_id IS '사용자';
-COMMENT ON COLUMN auth.user_permissions.permission IS '권한(COST_VIEW/COST_EDIT)';
-COMMENT ON TABLE auth.oauth2_authorization IS '로그인 토큰(Spring Authorization Server)';
-COMMENT ON COLUMN auth.oauth2_authorization.id IS '인가 ID';
-COMMENT ON COLUMN auth.oauth2_authorization.registered_client_id IS '클라이언트 ID';
-COMMENT ON COLUMN auth.oauth2_authorization.principal_name IS '사용자(로그인 ID)';
-COMMENT ON COLUMN auth.oauth2_authorization.authorization_grant_type IS '인가 방식';
-COMMENT ON COLUMN auth.oauth2_authorization.authorized_scopes IS '허용 범위';
-COMMENT ON COLUMN auth.oauth2_authorization.attributes IS '속성';
-COMMENT ON COLUMN auth.oauth2_authorization.state IS '상태 값';
-COMMENT ON COLUMN auth.oauth2_authorization.authorization_code_value IS '인가 코드';
-COMMENT ON COLUMN auth.oauth2_authorization.authorization_code_issued_at IS '인가 코드 발급 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.authorization_code_expires_at IS '인가 코드 만료 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.authorization_code_metadata IS '인가 코드 메타데이터';
-COMMENT ON COLUMN auth.oauth2_authorization.access_token_value IS 'access token';
-COMMENT ON COLUMN auth.oauth2_authorization.access_token_issued_at IS 'access token 발급 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.access_token_expires_at IS 'access token 만료 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.access_token_metadata IS 'access token 메타데이터';
-COMMENT ON COLUMN auth.oauth2_authorization.access_token_type IS 'access token 유형';
-COMMENT ON COLUMN auth.oauth2_authorization.access_token_scopes IS 'access token 범위';
-COMMENT ON COLUMN auth.oauth2_authorization.oidc_id_token_value IS 'ID 토큰';
-COMMENT ON COLUMN auth.oauth2_authorization.oidc_id_token_issued_at IS 'ID 토큰 발급 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.oidc_id_token_expires_at IS 'ID 토큰 만료 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.oidc_id_token_metadata IS 'ID 토큰 메타데이터';
-COMMENT ON COLUMN auth.oauth2_authorization.refresh_token_value IS 'refresh token';
-COMMENT ON COLUMN auth.oauth2_authorization.refresh_token_issued_at IS 'refresh token 발급 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.refresh_token_expires_at IS 'refresh token 만료 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.refresh_token_metadata IS 'refresh token 메타데이터';
-COMMENT ON COLUMN auth.oauth2_authorization.user_code_value IS '기기 인증 사용자 코드';
-COMMENT ON COLUMN auth.oauth2_authorization.user_code_issued_at IS '사용자 코드 발급 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.user_code_expires_at IS '사용자 코드 만료 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.user_code_metadata IS '사용자 코드 메타데이터';
-COMMENT ON COLUMN auth.oauth2_authorization.device_code_value IS '기기 코드';
-COMMENT ON COLUMN auth.oauth2_authorization.device_code_issued_at IS '기기 코드 발급 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.device_code_expires_at IS '기기 코드 만료 시각';
-COMMENT ON COLUMN auth.oauth2_authorization.device_code_metadata IS '기기 코드 메타데이터';
+COMMENT ON COLUMN auth.roles.code IS '역할 코드 (만든 뒤 바꾸지 않음, 대문자·숫자·밑줄)';
+COMMENT ON COLUMN auth.roles.name IS '역할 이름';
+COMMENT ON COLUMN auth.roles.description IS '설명';
+COMMENT ON COLUMN auth.roles.created_at IS '만든 시각';
+COMMENT ON COLUMN auth.roles.created_by IS '만든 사람 (기본 역할은 NULL)';
+COMMENT ON COLUMN auth.roles.updated_at IS '고친 시각';
+COMMENT ON COLUMN auth.roles.updated_by IS '고친 사람';
+COMMENT ON COLUMN auth.roles.version IS '낙관적 잠금 버전';
+COMMENT ON COLUMN auth.roles.deleted_at IS '삭제 시각 (소프트 삭제)';
+COMMENT ON COLUMN auth.roles.deleted_by IS '삭제한 사람';
+COMMENT ON TABLE auth.role_permissions IS '역할에 넣은 권한';
+COMMENT ON COLUMN auth.role_permissions.role_id IS '역할';
+COMMENT ON COLUMN auth.role_permissions.permission_code IS '권한';
+COMMENT ON TABLE auth.spring_session IS '로그인 세션(Spring Session JDBC)';
+COMMENT ON COLUMN auth.spring_session.primary_id IS '내부 ID';
+COMMENT ON COLUMN auth.spring_session.session_id IS '세션 ID(쿠키 값). 로그인할 때 바뀐다';
+COMMENT ON COLUMN auth.spring_session.creation_time IS '만든 시각(epoch 밀리초)';
+COMMENT ON COLUMN auth.spring_session.last_access_time IS '마지막 요청 시각(epoch 밀리초)';
+COMMENT ON COLUMN auth.spring_session.max_inactive_interval IS '요청이 없으면 끝나는 시간(초)';
+COMMENT ON COLUMN auth.spring_session.expiry_time IS '만료 시각(epoch 밀리초)';
+COMMENT ON COLUMN auth.spring_session.principal_name IS '사용자 ID(auth.users.id)';
+COMMENT ON TABLE auth.spring_session_attributes IS '로그인 세션 속성';
+COMMENT ON COLUMN auth.spring_session_attributes.session_primary_id IS '세션';
+COMMENT ON COLUMN auth.spring_session_attributes.attribute_name IS '속성 이름';
+COMMENT ON COLUMN auth.spring_session_attributes.attribute_bytes IS '속성 값(직렬화)';
 COMMENT ON TABLE product.product_categories IS '품목군';
 COMMENT ON COLUMN product.product_categories.id IS 'ID (UUID v7, 앱에서 생성. DB 기본값도 v7, PostgreSQL 18)';
 COMMENT ON COLUMN product.product_categories.code IS '품목군 코드';
@@ -1847,10 +1838,37 @@ INSERT INTO product.product_categories (code, name, sort_order) VALUES
     ('TH_SENSOR', '온습도 센서', 6),
     ('COOLING', '쿨링 시스템', 7);
 
-INSERT INTO auth.roles (code, name) VALUES
-    ('ADMIN', '관리자'),
-    ('OPERATOR', '입력자'),
-    ('VIEWER', '조회자');
+INSERT INTO auth.permissions (code, name, description, sort_order) VALUES
+    ('PARTNER_MANAGE', '거래처 관리', '거래처·담당자 등록·수정·삭제', 1),
+    ('PRODUCT_MANAGE', '제품 관리', '제품 등록·수정·삭제', 2),
+    ('MASTER_MANAGE', '기준 정보 관리', '품목군·창고·위치·통화·구성 묶음 관리, 제품 사용 중지·다시 사용', 3),
+    ('DOCUMENT_MANAGE', '거래 문서 관리', '프로젝트·거래 문서 등록·수정·확정·취소·삭제, 비교·복사, 첨부 올리기·떼기', 4),
+    ('STOCK_OPERATE', '재고 처리', '입고·출고·이동·검수·배정·납품·반품·교체·대차·실사·수리·보증, 처리 취소·정정, 폐기·대여 출고 요청', 5),
+    ('STOCK_ADJUST', '재고 조정', '재고 조정, 초기 재고 넣기, 기준일 이전 등록(납품 장비·처리 수량)', 6),
+    ('APPROVE', '승인', '승인·반려·사후 확인, 승인·확인 대기함 전체 보기', 7),
+    ('CLOSING', '마감', '월 마감·해제, 거래 품목 잔량 마감', 8),
+    ('RECORD_CORRECT', '기록 정정', '7일보다 지난 날짜, 실사 중 범위 처리, 확정 문서의 프로젝트·거래처 변경, 이력 있는 제품의 Item Code 변경, 납품한 장비의 시리얼 변경, 정산 방식 바꾸기', 9),
+    ('AUDIT_VIEW', '감사 조회', '정합성 점검 결과 보기·지금 실행, 통합 변경 이력, 제품 변경 이력', 10),
+    ('USER_MANAGE', '계정·역할 관리', '계정 목록·하나·만들기·수정·삭제, 비밀번호 초기화, 역할 만들기·수정·삭제', 11),
+    ('COST_VIEW', '금액 보기', '응답의 금액 필드, 금액 이력·부대비용·마진·평가액 조회, 첨부 열기·내려받기', 12),
+    ('COST_EDIT', '금액 수정', '단가·부대비용·대여료·초기 재고 단가 넣기·고치기·비우기', 13);
+
+INSERT INTO auth.roles (code, name, description) VALUES
+    ('ADMIN', '관리자', '모든 권한. 고치거나 지울 수 없다'),
+    ('OPERATOR_BASIC', '일반 운영자', '거래처·제품·거래 문서 관리와 재고 처리'),
+    ('OPERATOR_COST_VIEW', '영업 운영자', '일반 운영자 + 금액 보기'),
+    ('OPERATOR_COST_EDIT', '정산 운영자', '일반 운영자 + 금액 보기·수정'),
+    ('USER_BASIC', '일반 사용자', '보기만 한다(금액 제외)'),
+    ('USER_COST_VIEW', '회계 사용자', '보기만 한다(금액 포함)');
+
+INSERT INTO auth.role_permissions (role_id, permission_code)
+SELECT r.id, p.code
+FROM auth.roles r
+JOIN auth.permissions p ON
+    r.code = 'ADMIN'
+    OR (r.code LIKE 'OPERATOR\_%' AND p.code IN ('PARTNER_MANAGE', 'PRODUCT_MANAGE', 'DOCUMENT_MANAGE', 'STOCK_OPERATE'))
+    OR (r.code IN ('OPERATOR_COST_VIEW', 'OPERATOR_COST_EDIT', 'USER_COST_VIEW') AND p.code = 'COST_VIEW')
+    OR (r.code = 'OPERATOR_COST_EDIT' AND p.code = 'COST_EDIT');
 
 COMMIT;
 
@@ -1881,6 +1899,11 @@ COMMIT;
 --   ck_loan_lines_1                            대차 수량 > 0
 --   ck_loan_lines_2                            정산 수량 <= 대차 수량(INV-39)
 --   ck_loan_settlements_1                      정산 기록 수량 > 0
+-- 나중 Flyway 마이그레이션이 처음부터 건 제약 (v2로 미루지 않음)
+--   ux_spring_session_session_id               세션 ID로 세션 1개를 찾는다(V3, Spring Session JDBC)
+--   ck_roles_code                              역할 코드는 대문자·숫자·밑줄(V5, #106)
+--   ux_roles_code                              역할 코드는 삭제된 것을 빼고 하나(V5, #106)
+--   ux_roles_name                              역할 이름은 삭제된 것을 빼고 하나(V5, #106)
 
 -- 운영 계정 권한 (원장 보호, INV-01):
 -- REVOKE UPDATE, DELETE ON inventory.ledger_entries FROM app_user;

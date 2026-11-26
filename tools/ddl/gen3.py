@@ -11,9 +11,9 @@ import re
 import sys
 
 import gen
-from gen import TABLES, BY_NAME, q, esc, pg_type, SEED_PG
+from gen import TABLES, BY_NAME, q, esc, pg_type, SEED_PG, fk_parts, fk_indexes
 
-DATE = "2026-11-24"
+DATE = "2026-11-26"
 
 # ---------------------------------------------------------------- 핵심 제약 (v1에 포함)
 # 기준: ① 서비스 로직이 이 제약에 기대어 동작하거나(업서트·중복 요청 방지·로그인 조회)
@@ -49,6 +49,16 @@ CORE = {
     "ck_loan_lines_1": "대차 수량 > 0",
     "ck_loan_lines_2": "정산 수량 <= 대차 수량(INV-39)",
     "ck_loan_settlements_1": "정산 기록 수량 > 0",
+}
+
+# ---------------------------------------------------------------- 나중 Flyway 마이그레이션이 처음부터 건 제약 (v1에 포함)
+# 개발을 시작한 뒤 DB 구조의 원본은 Flyway다. 아래는 V3·V5가 이미 걸었으므로 v2로 미루지 않는다.
+# 그래서 v1 파일 = Flyway V1~V5를 적용한 DB와 같은 구조다 (verify.sh가 비교).
+APPLIED = {
+    "ux_spring_session_session_id": "세션 ID로 세션 1개를 찾는다(V3, Spring Session JDBC)",
+    "ck_roles_code": "역할 코드는 대문자·숫자·밑줄(V5, #106)",
+    "ux_roles_code": "역할 코드는 삭제된 것을 빼고 하나(V5, #106)",
+    "ux_roles_name": "역할 이름은 삭제된 것을 빼고 하나(V5, #106)",
 }
 
 # ---------------------------------------------------------------- 보강 제안 P1~P5 (v2·운영본에만)
@@ -98,7 +108,7 @@ $$;"""),
      "CHECK (reversal_of_entry_id IS NULL OR reversal_of_entry_id <> id);"),
 ]
 
-EXTRA_NAME = re.compile(r"\b((?:ux|trg|fn)_\w+)")
+EXTRA_NAME = re.compile(r"\b((?:ux|trg|fn|ck)_\w+)")
 
 
 def extra_name(stmt):
@@ -118,12 +128,12 @@ def constraints(t):
 
 
 ALL_NAMES = {n for t in TABLES for n, _, _ in constraints(t)}
-missing = set(CORE) - ALL_NAMES
-assert not missing, f"CORE names not found: {missing}"
+missing = (set(CORE) | set(APPLIED)) - ALL_NAMES
+assert not missing, f"CORE/APPLIED names not found: {missing}"
 
 
 def is_core(name):
-    return name in CORE
+    return name in CORE or name in APPLIED
 
 
 # ---------------------------------------------------------------- 공통 조각
@@ -171,17 +181,16 @@ def foreign_keys_and_indexes():
     out = ["-- ---------------------------------------------------------------- 외래 키"]
     for t in TABLES:
         for fk in t["fks"]:
-            col, ref = fk[0], BY_NAME[fk[1]]
-            refcol = fk[2] if len(fk) > 2 else ref["pk"][0]
+            col, ref, refcol, on_delete = fk_parts(fk)
             out.append(f'ALTER TABLE {q(t)} ADD CONSTRAINT fk_{t["name"]}_{col} '
-                       f'FOREIGN KEY ({col}) REFERENCES {q(ref)} ({refcol});')
+                       f'FOREIGN KEY ({col}) REFERENCES {q(ref)} ({refcol}){on_delete};')
     out.append("")
     out.append("-- ---------------------------------------------------------------- 조회 인덱스")
     for t in TABLES:
         for idx in t["indexes"]:
             out.append(f'CREATE INDEX ix_{t["name"]}_{"_".join(idx)[:40]} ON {q(t)} ({", ".join(idx)});')
-        for fk in t["fks"]:
-            out.append(f'CREATE INDEX ix_{t["name"]}_{fk[0]} ON {q(t)} ({fk[0]});')
+        for col in fk_indexes(t):
+            out.append(f'CREATE INDEX ix_{t["name"]}_{col} ON {q(t)} ({col});')
     out.append("")
     return out
 
@@ -191,7 +200,8 @@ def extras(include, title):
     for t in TABLES:
         for name, kind, body in constraints(t):
             if kind == "extra" and include(name):
-                out.append(f"-- {CORE.get(name, '')}" if name in CORE else f"-- {name}")
+                why = CORE.get(name) or APPLIED.get(name)
+                out.append(f"-- {why}" if why else f"-- {name}")
                 out.append(body)
     out.append("")
     return out
@@ -250,6 +260,7 @@ def gen_v1():
     out = header("① 처음 생성용 (v1)", [
         "포함: 스키마, 테이블, PK, FK, NOT NULL, 기본값, 조회 인덱스, 주석, 초기 데이터",
         "      + 핵심 제약(서비스 로직이 기대는 키, 원장 보호, 수량 안전망) — 파일 끝 목록 참고",
+        "구조: Flyway V1~V5를 적용한 DB와 같다(verify.sh로 비교). 이후 DB 변경은 새 Flyway 마이그레이션으로 한다",
         "제외: 코드 목록 CHECK, 조건부 CHECK, 업무 키 UNIQUE, 보강 제안 P1~P5",
         "      → 서비스 테스트를 마친 뒤 asset_v2_constraints.sql로 추가한다"])
     out += ["BEGIN;", ""]
@@ -263,6 +274,9 @@ def gen_v1():
     out.append("-- 이 파일에 포함된 핵심 제약 목록")
     for name, why in CORE.items():
         out.append(f"--   {name:<42} {why}")
+    out.append("-- 나중 Flyway 마이그레이션이 처음부터 건 제약 (v2로 미루지 않음)")
+    for name, why in APPLIED.items():
+        out.append(f"--   {name:<42} {why}")
     out.append("")
     out += GRANT_NOTE
     return "\n".join(out) + "\n"
@@ -270,7 +284,7 @@ def gen_v1():
 
 def gen_v2():
     out = header("② 추후 수정용 (v2, 제약 추가)", [
-        "전제: asset_v1_create.sql이 적용된 DB",
+        "전제: asset_v1_create.sql이 적용된 DB (= Flyway V1~V5가 적용된 DB)",
         "내용: v1에서 뺀 CHECK·UNIQUE·부분 유니크 + 보강 제안 P1~P5",
         "주의: ADD CONSTRAINT는 기존 데이터를 검사한다. 위반 데이터가 있으면 실패하고",
         "      전체가 롤백되므로, 실패 메시지의 제약 이름으로 데이터를 정리한 뒤 다시 실행한다.",
@@ -288,7 +302,7 @@ def gen_prod():
     out = header("③ 운영 최종본 (v1 + v2)", [
         "운영 DB를 처음 만들 때 이 파일 하나만 실행한다.",
         "v1 → v2를 순서대로 적용한 DB와 스키마가 같다 (생성 시 자동 비교).",
-        "Flyway 도입 시 이 파일을 운영 기준선(baseline)으로 삼는다."])
+        "참고용: 운영 DB도 Flyway 마이그레이션으로 만든다. 이 파일은 v2까지 다 적용한 최종 구조를 한 파일로 본다."])
     out += ["BEGIN;", ""]
     out += create_tables(everything)
     out += foreign_keys_and_indexes()
@@ -311,5 +325,5 @@ if __name__ == "__main__":
         with open(f"{outdir}/{fn}", "w", encoding="utf-8") as f:
             f.write(body)
     total = len(ALL_NAMES)
-    print(f"constraints(UNIQUE/CHECK/extra): {total} | core(v1): {len(CORE)} | "
-          f"deferred(v2): {total - len(CORE)} | proposals(v2): {len(PROPOSALS)}")
+    print(f"constraints(UNIQUE/CHECK/extra): {total} | core(v1): {len(CORE)} | applied(v1): {len(APPLIED)} | "
+          f"deferred(v2): {total - len(CORE) - len(APPLIED)} | proposals(v2): {len(PROPOSALS)}")

@@ -15,7 +15,7 @@ CREATE TABLE `users` (
     `password_hash` VARCHAR(200) NOT NULL COMMENT '비밀번호 해시',
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '사용 여부',
     `last_login_at` DATETIME(6) NULL COMMENT '마지막 로그인',
-    `tokens_valid_after` DATETIME(6) NULL COMMENT '토큰 무효 기준 시각',
+    `tokens_valid_after` DATETIME(6) NULL COMMENT '세션 무효 기준 시각. 이보다 먼저 로그인한 세션은 끊는다',
     `must_change_password` BOOLEAN NOT NULL DEFAULT FALSE COMMENT '다음 로그인 때 비밀번호 변경 필요',
     `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '생성 시각',
     `created_by` CHAR(36) NOT NULL COMMENT '생성자',
@@ -24,69 +24,60 @@ CREATE TABLE `users` (
     `version` INT NOT NULL DEFAULT 0 COMMENT '버전(낙관적 잠금)',
     `deleted_at` DATETIME(6) NULL COMMENT '삭제 시각',
     `deleted_by` CHAR(36) NULL COMMENT '삭제자',
-    PRIMARY KEY (`id`)
+    `role_id` CHAR(36) NOT NULL COMMENT '역할 (계정마다 하나)',
+    PRIMARY KEY (`id`),
+    CONSTRAINT `fk_users_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`)
 ) COMMENT = '[auth] 사용자';
+
+CREATE TABLE `permissions` (
+    `code` VARCHAR(30) NOT NULL COMMENT '권한 코드',
+    `name` VARCHAR(50) NOT NULL COMMENT '권한 이름',
+    `description` VARCHAR(200) NOT NULL COMMENT '이 권한으로 할 수 있는 일',
+    `sort_order` SMALLINT NOT NULL COMMENT '보여 주는 순서',
+    PRIMARY KEY (`code`)
+) COMMENT = '[auth] 권한 (시스템이 정함, 화면에서 추가·삭제하지 않음)';
 
 CREATE TABLE `roles` (
     `id` CHAR(36) NOT NULL DEFAULT (UUID()) COMMENT 'ID (UUID v7, 앱에서 생성. DB 기본값도 v7, PostgreSQL 18)',
-    `code` VARCHAR(30) NOT NULL COMMENT '역할 코드',
-    `name` VARCHAR(100) NOT NULL COMMENT '역할명',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_roles_code` (`code`)
+    `code` VARCHAR(30) NOT NULL COMMENT '역할 코드 (만든 뒤 바꾸지 않음, 대문자·숫자·밑줄)',
+    `name` VARCHAR(50) NOT NULL COMMENT '역할 이름',
+    `description` VARCHAR(200) NULL COMMENT '설명',
+    `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '만든 시각',
+    `created_by` CHAR(36) NULL COMMENT '만든 사람 (기본 역할은 NULL)',
+    `updated_at` DATETIME(6) NULL COMMENT '고친 시각',
+    `updated_by` CHAR(36) NULL COMMENT '고친 사람',
+    `version` INT NOT NULL DEFAULT 0 COMMENT '낙관적 잠금 버전',
+    `deleted_at` DATETIME(6) NULL COMMENT '삭제 시각 (소프트 삭제)',
+    `deleted_by` CHAR(36) NULL COMMENT '삭제한 사람',
+    PRIMARY KEY (`id`)
 ) COMMENT = '[auth] 역할';
 
-CREATE TABLE `user_roles` (
-    `user_id` CHAR(36) NOT NULL COMMENT '사용자',
+CREATE TABLE `role_permissions` (
     `role_id` CHAR(36) NOT NULL COMMENT '역할',
-    PRIMARY KEY (`user_id`, `role_id`),
-    CONSTRAINT `fk_user_roles_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
-    CONSTRAINT `fk_user_roles_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`)
-) COMMENT = '[auth] 사용자 역할';
+    `permission_code` VARCHAR(30) NOT NULL COMMENT '권한',
+    PRIMARY KEY (`role_id`, `permission_code`),
+    CONSTRAINT `fk_role_permissions_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`),
+    CONSTRAINT `fk_role_permissions_permission_code` FOREIGN KEY (`permission_code`) REFERENCES `permissions` (`code`)
+) COMMENT = '[auth] 역할에 넣은 권한';
 
-CREATE TABLE `user_permissions` (
-    `user_id` CHAR(36) NOT NULL COMMENT '사용자',
-    `permission` VARCHAR(30) NOT NULL COMMENT '권한(COST_VIEW/COST_EDIT)',
-    PRIMARY KEY (`user_id`, `permission`),
-    CONSTRAINT `fk_user_permissions_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
-    CONSTRAINT `ck_user_permissions_1` CHECK (permission IN ('COST_VIEW', 'COST_EDIT'))
-) COMMENT = '[auth] 사용자 추가 권한';
+CREATE TABLE `spring_session` (
+    `primary_id` CHAR(36) NOT NULL COMMENT '내부 ID',
+    `session_id` CHAR(36) NOT NULL COMMENT '세션 ID(쿠키 값). 로그인할 때 바뀐다',
+    `creation_time` BIGINT NOT NULL COMMENT '만든 시각(epoch 밀리초)',
+    `last_access_time` BIGINT NOT NULL COMMENT '마지막 요청 시각(epoch 밀리초)',
+    `max_inactive_interval` INT NOT NULL COMMENT '요청이 없으면 끝나는 시간(초)',
+    `expiry_time` BIGINT NOT NULL COMMENT '만료 시각(epoch 밀리초)',
+    `principal_name` VARCHAR(100) NULL COMMENT '사용자 ID(auth.users.id)',
+    PRIMARY KEY (`primary_id`)
+) COMMENT = '[auth] 로그인 세션(Spring Session JDBC)';
 
-CREATE TABLE `oauth2_authorization` (
-    `id` VARCHAR(100) NOT NULL COMMENT '인가 ID',
-    `registered_client_id` VARCHAR(100) NOT NULL COMMENT '클라이언트 ID',
-    `principal_name` VARCHAR(200) NOT NULL COMMENT '사용자(로그인 ID)',
-    `authorization_grant_type` VARCHAR(100) NOT NULL COMMENT '인가 방식',
-    `authorized_scopes` VARCHAR(1000) NULL COMMENT '허용 범위',
-    `attributes` TEXT NULL COMMENT '속성',
-    `state` VARCHAR(500) NULL COMMENT '상태 값',
-    `authorization_code_value` TEXT NULL COMMENT '인가 코드',
-    `authorization_code_issued_at` TIMESTAMP NULL COMMENT '인가 코드 발급 시각',
-    `authorization_code_expires_at` TIMESTAMP NULL COMMENT '인가 코드 만료 시각',
-    `authorization_code_metadata` TEXT NULL COMMENT '인가 코드 메타데이터',
-    `access_token_value` TEXT NULL COMMENT 'access token',
-    `access_token_issued_at` TIMESTAMP NULL COMMENT 'access token 발급 시각',
-    `access_token_expires_at` TIMESTAMP NULL COMMENT 'access token 만료 시각',
-    `access_token_metadata` TEXT NULL COMMENT 'access token 메타데이터',
-    `access_token_type` VARCHAR(100) NULL COMMENT 'access token 유형',
-    `access_token_scopes` VARCHAR(1000) NULL COMMENT 'access token 범위',
-    `oidc_id_token_value` TEXT NULL COMMENT 'ID 토큰',
-    `oidc_id_token_issued_at` TIMESTAMP NULL COMMENT 'ID 토큰 발급 시각',
-    `oidc_id_token_expires_at` TIMESTAMP NULL COMMENT 'ID 토큰 만료 시각',
-    `oidc_id_token_metadata` TEXT NULL COMMENT 'ID 토큰 메타데이터',
-    `refresh_token_value` TEXT NULL COMMENT 'refresh token',
-    `refresh_token_issued_at` TIMESTAMP NULL COMMENT 'refresh token 발급 시각',
-    `refresh_token_expires_at` TIMESTAMP NULL COMMENT 'refresh token 만료 시각',
-    `refresh_token_metadata` TEXT NULL COMMENT 'refresh token 메타데이터',
-    `user_code_value` TEXT NULL COMMENT '기기 인증 사용자 코드',
-    `user_code_issued_at` TIMESTAMP NULL COMMENT '사용자 코드 발급 시각',
-    `user_code_expires_at` TIMESTAMP NULL COMMENT '사용자 코드 만료 시각',
-    `user_code_metadata` TEXT NULL COMMENT '사용자 코드 메타데이터',
-    `device_code_value` TEXT NULL COMMENT '기기 코드',
-    `device_code_issued_at` TIMESTAMP NULL COMMENT '기기 코드 발급 시각',
-    `device_code_expires_at` TIMESTAMP NULL COMMENT '기기 코드 만료 시각',
-    `device_code_metadata` TEXT NULL COMMENT '기기 코드 메타데이터',
-    PRIMARY KEY (`id`)
-) COMMENT = '[auth] 로그인 토큰(Spring Authorization Server)';
+CREATE TABLE `spring_session_attributes` (
+    `session_primary_id` CHAR(36) NOT NULL COMMENT '세션',
+    `attribute_name` VARCHAR(200) NOT NULL COMMENT '속성 이름',
+    `attribute_bytes` BYTEA NOT NULL COMMENT '속성 값(직렬화)',
+    PRIMARY KEY (`session_primary_id`, `attribute_name`),
+    CONSTRAINT `fk_spring_session_attributes_session_primary_id` FOREIGN KEY (`session_primary_id`) REFERENCES `spring_session` (`primary_id`) ON DELETE CASCADE
+) COMMENT = '[auth] 로그인 세션 속성';
 
 CREATE TABLE `product_categories` (
     `id` CHAR(36) NOT NULL DEFAULT (UUID()) COMMENT 'ID (UUID v7, 앱에서 생성. DB 기본값도 v7, PostgreSQL 18)',
