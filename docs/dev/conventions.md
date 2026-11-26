@@ -35,7 +35,7 @@
 | 다른 객체 가리키기 | `common` | `Ref(id, label)`, 또는 모듈별 `CategoryRef(id, code, name)` | 다른 객체는 `{id, 코드 또는 이름}`만 (API 명세서 3절) |
 | 모듈 간 | `{모듈}/api/dto` | `StockMovementRequest`, `StockSnapshot` | 다른 모듈이 부르는 인터페이스용. 웹 요청·응답 객체와 섞지 않는다(디렉토리 구조 4절) |
 
-**금액 필드**: 금액 보기 권한이 없으면 필드 자체가 없어야 한다(INV-83). 금액 없는 응답과 금액 있는 응답을 따로 두고(예: `TradeLineResponse` / `TradeLineWithPriceResponse`), 서비스가 권한을 보고 고른다. null로 채워 보내지 않는다.
+**금액 필드**: `COST_VIEW` 권한이 없으면 필드 자체가 없어야 한다(INV-83). 금액 없는 응답과 금액 있는 응답을 따로 두고(예: `TradeLineResponse` / `TradeLineWithPriceResponse`), 서비스가 권한을 보고 고른다. null로 채워 보내지 않는다.
 
 **MapStruct 사용 범위**
 
