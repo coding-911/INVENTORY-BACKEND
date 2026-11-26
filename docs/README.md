@@ -16,9 +16,9 @@
 | `db/ddl/` | 테이블 정의서 첨부 | `asset_v1_create.sql`(개발·테스트 첫 생성), `asset_v2_constraints.sql`(서비스 테스트 후 제약 추가), `asset_prod_full.sql`(운영 최종본), `asset_schema_erdcloud_mysql.sql`(ERD 도구용, 개발에 쓰지 않음) |
 | `db/check_queries_C9_C15.sql` | 불변 조건 목록 10절 | 정합성 점검 쿼리 C9–C15 (C1–C8은 `rules/invariants.md` 10절) |
 | `db/erdcloud/` | — | ERDCloud 반영 작업 지시서 (ERD 도구 작업용, 개발과 무관) |
-| `rules/ledger-rules.md` | 재고 원장 처리 규칙 | 처리 유형, 원장 기록 방식, 확정 사항 #1–#105 |
-| `rules/invariants.md` | 불변 조건 목록 | INV-01–87, 강제 위치, DDL 보강 제안 P1–P5, 점검 쿼리 C1–C15, 테스트 규칙 |
-| `rules/permissions.md` | 권한 매트릭스 | 역할·금액 권한, 조건 표기, 기본과 다른 API, 같은 API 안 역할별 규칙 |
+| `rules/ledger-rules.md` | 재고 원장 처리 규칙 | 처리 유형, 원장 기록 방식, 확정 사항 #1–#106 |
+| `rules/invariants.md` | 불변 조건 목록 | INV-01–88, 강제 위치, DDL 보강 제안 P1–P5, 점검 쿼리 C1–C15, 테스트 규칙 |
+| `rules/permissions.md` | 권한 매트릭스 | 권한 13개와 근거, 역할과 기본 역할 6개, 역할 규칙, 조건 표기, 기본과 다른 API, 같은 API 안 권한별 규칙 |
 | `dev/directory-structure.md` | 디렉토리 구조 | 저장소·패키지 구조, 모듈 목록, 의존 규칙, Flyway 파일 이름 |
 | `dev/tech-stack.md` | 백엔드 기술 스택 | 버전, 쓰지 않는 기술, 실행 구성, 배포 |
 | `dev/conventions.md` | 개발 컨벤션 | Lombok·DTO·MapStruct·엔티티·조회·트랜잭션·오류·날짜·테스트·Git 규칙 |

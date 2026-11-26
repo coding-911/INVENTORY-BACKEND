@@ -42,10 +42,10 @@
 - 쿠키 `SESSION`은 HttpOnly·SameSite=Lax이고 HTTPS 요청이면 Secure다. 화면과 API는 같은 주소에서 쓴다(Nginx가 `/api`를 백엔드로 넘김). 그래서 CORS 설정이 없다. 개발 중에는 Vite 프록시로 같은 주소처럼 쓴다.
 - CSRF: 쿠키를 자동으로 보내는 방식이라, 쓰기 요청(POST·PATCH·DELETE, 로그인·로그아웃 포함)은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 넣어 보낸다. 서버가 쿠키가 없는 응답마다 넣어 주고, 로그인하면 값을 바꾼다. 헤더가 없거나 다르면 403 `FORBIDDEN`.
 - 없는 아이디·틀린 비밀번호는 모두 401 `LOGIN_FAILED`다. 어느 경우인지 알려 주면 있는 아이디를 알아낼 수 있어서 구분하지 않는다. 비밀번호는 맞는데 사용 중지된 계정은 403 `ACCOUNT_INACTIVE`다. 비밀번호를 아는 사람에게만 보이므로 아이디가 드러나지 않고, 다시 입력해도 소용없으니 관리자에게 문의하라고 알린다. 사용 중지 계정도 비밀번호가 틀리면 `LOGIN_FAILED`다 (2026-11-25). 성공하면 `users.last_login_at`을 기록하고 `Me`를 돌려준다.
-- 세션에는 **사용자 ID와 로그인 시각만** 저장한다. 서버는 요청마다 DB에서 계정의 역할(관리자·입력자·조회자)·금액 권한(보기·수정)을 읽어 권한을 판단한다. 그래서 권한은 항상 DB의 최신 값이다 (2026-11-25). 프론트는 `Me`(로그인 응답, `GET /api/v1/user/me`)의 roles·permissions로 메뉴를 그린다.
-- 관리자가 역할·금액 권한·사용 여부·로그인 ID·비밀번호를 바꾸면 그 사용자의 `tokens_valid_after`(세션 무효 기준 시각, 컬럼 이름은 그대로 둔다)를 지금으로 기록한다(INV-80). 서버는 요청마다 계정을 DB에서 다시 보고, 로그인 시각이 그보다 이르거나 계정이 사용 중지·삭제됐으면 세션을 끊고 401 `UNAUTHENTICATED`로 막는다. 그 사용자는 다시 로그인하면 바뀐 권한으로 일한다.
+- 세션에는 **사용자 ID와 로그인 시각만** 저장한다. 서버는 요청마다 DB에서 계정의 역할과 그 역할의 권한을 읽어 판단한다. 그래서 권한은 항상 DB의 최신 값이다 (2026-11-25). 프론트는 `Me`(로그인 응답, `GET /api/v1/user/me`)의 permissions로 메뉴를 그린다.
+- 관리자가 계정의 역할·사용 여부·로그인 ID·비밀번호를 바꾸면 그 사용자의 `tokens_valid_after`(세션 무효 기준 시각, 컬럼 이름은 그대로 둔다)를 지금으로 기록한다(INV-80). 서버는 요청마다 계정을 DB에서 다시 보고, 로그인 시각이 그보다 이르거나 계정이 사용 중지·삭제됐으면 세션을 끊고 401 `UNAUTHENTICATED`로 막는다. 그 사용자는 다시 로그인하면 바뀐 권한으로 일한다. 역할에 넣은 권한을 바꾸는 것은 세션을 끊지 않고 그 역할인 사람들의 다음 요청부터 적용된다 (2026-11-26).
 - 첫 관리자: 앱이 켜질 때 사용 중인 관리자가 없으면 환경 변수 `ADMIN_LOGIN_ID`·`ADMIN_PASSWORD`로 관리자 한 명을 만든다(`must_change_password = true`, 1.14). 개발 편의 기본값 admin/1234는 개발 PC 설정(`application-local.yml`, `local` 프로필)에만 있다. 그 밖에서는 관리자가 없는데 값이 없거나 비밀번호가 1234면 앱이 켜지지 않는다. "처음 로그인하면 비밀번호를 바꿔야 한다"는 기본 비밀번호를 아는 사람이 먼저 로그인하는 것을 막지 못하기 때문이다 (2026-11-25).
-- 권한(역할 3개: 관리자·입력자·조회자, 금액 권한 2개: 보기·수정)은 서버가 요청마다 확인한다. 화면에 안 보이는 기능을 다른 방법으로 요청해도 막힌다 ([사용자 계정과 권한](https://app.notion.com/p/40cb82ca31e5811dbdd1f86d13354231)).
+- 권한은 서버가 요청마다 확인한다(2026-11-26: 권한 13개를 역할로 묶고 계정은 역할 하나, [권한 매트릭스](https://app.notion.com/p/40ea7b147db34b08b8bdfff1001cc500) 1절). 화면에 안 보이는 기능을 다른 방법으로 요청해도 막힌다 ([사용자 계정과 권한](https://app.notion.com/p/40cb82ca31e5811dbdd1f86d13354231)).
 - 금액 보기 권한이 없으면 응답에 금액 필드 자체가 없다 (INV-50).
 
 ### 1.4 공통 응답 형식과 오류 코드
@@ -179,7 +179,7 @@
 
 ### 1.9 등록·수정·삭제 (2026-11-23 결정)
 
-- 사용자가 등록하는 모든 리소스에 목록·하나 조회·등록·수정·삭제 API를 둔다. 예외: 역할(관리자·입력자·조회자)은 시스템 로직이 기대므로 조회만, 통화는 금액 기록이 참조하므로 삭제 없음.
+- 사용자가 등록하는 모든 리소스에 목록·하나 조회·등록·수정·삭제 API를 둔다. 예외: 권한은 코드가 검사하므로 조회만(역할은 2026-11-26부터 만들기·수정·삭제 가능, 관리자 역할은 고정), 통화는 금액 기록이 참조하므로 삭제 없음.
 - **삭제는 소프트 삭제**다(`deleted_at`, `deleted_by`). 삭제하면 목록·선택에서 사라지고 삭제 목록(trash)에서 복구한다. 복구하려는 값이 그사이 다른 데이터와 겹치면 복구할 수 없다.
 - **이력이 있으면 삭제할 수 없다.** 더 안 쓰는 것은 사용 중지(`isActive: false`)한다. 사용 중지한 것은 목록에 보이고 다시 켤 수 있다. 삭제는 잘못 만든 것을 지울 때 쓴다 (확정 사항 #78과 같은 원칙).
 - 코드·번호의 겹침 검사(Item Code, 품목군 코드, 창고 코드, 위치 코드, 사업자등록번호, 로그인 ID)는 삭제된 것을 빼고 한다. 거래 문서번호(INV-31)와 같다.
@@ -192,10 +192,15 @@
 | 코드 | 기본 메시지 | 언제 |
 |---|---|---|
 | `USER_LOGIN_ID_DUPLICATE` | 이미 있는 로그인 ID입니다 | 계정 만들기·수정 |
-| `USER_LAST_ADMIN` | 사용 중인 관리자가 한 명은 있어야 합니다 | 마지막 관리자의 역할을 빼거나 중지·삭제 |
-| `USER_SELF_CHANGE` | 자기 계정의 역할·사용 여부는 바꿀 수 없습니다 | 관리자가 자기 역할·사용 여부를 바꾸거나 자기를 삭제 |
+| `USER_LAST_ADMIN` | 사용 중인 관리자가 한 명은 있어야 합니다 | 마지막 관리자 역할 계정의 역할을 바꾸거나 중지·삭제 |
+| `USER_SELF_CHANGE` | 자기 계정의 역할·사용 여부는 바꿀 수 없습니다 | 자기 역할·사용 여부를 바꾸거나 자기를 삭제 |
 | `USER_HAS_HISTORY` | 로그인한 적이 있는 계정은 삭제할 수 없습니다. 사용 중지해 주세요 | 계정 삭제 |
-| `USER_VIEWER_COST_EDIT` | 조회자에게는 금액 수정 권한을 줄 수 없습니다 | 계정 만들기·수정 (2026-11-24, #105, INV-87) |
+| ~~`USER_VIEWER_COST_EDIT`~~ | — | 2026-11-26 없앰(#106). 만들기 전에 없앴으므로 쓰이지 않는다 |
+| `ROLE_CODE_DUPLICATE` | 이미 있는 역할 코드입니다 | 역할 만들기 (2026-11-26) |
+| `ROLE_NAME_DUPLICATE` | 이미 있는 역할 이름입니다 | 역할 만들기·수정 (2026-11-26) |
+| `ROLE_LOCKED` | 관리자 역할은 바꾸거나 지울 수 없습니다 | 관리자 역할 수정·삭제 (2026-11-26, R1) |
+| `ROLE_IN_USE` | 이 역할을 쓰는 계정이 있어 지울 수 없습니다 | 역할 삭제 (2026-11-26, R4) |
+| `ROLE_COST_EDIT_WITHOUT_VIEW` | 금액 수정에는 금액 보기가 함께 있어야 합니다 | 역할 만들기·수정 (2026-11-26, R3, INV-88) |
 | `PASSWORD_MISMATCH` | 현재 비밀번호가 맞지 않습니다 | 본인 비밀번호 변경 |
 | `PRODUCT_ITEM_CODE_DUPLICATE` | 이미 있는 Item Code입니다 | 제품 등록·수정 (INV-31과 같은 방식) |
 | `PRODUCT_IN_USE` | 남은 재고·문서·배정·대차가 있어 사용 중지할 수 없습니다 | 제품 사용 중지. `details`에 남은 항목 (INV-71) |
@@ -215,11 +220,11 @@
 
 ### 1.10 업무 동작 공통 검사와 2단계 오류 코드 (2026-11-23)
 
-재고를 움직이는 모든 업무 동작은 같은 순서로 검사한다: 중복 요청 키(1.5) → 권한 → 업무 날짜(미래 금지, 입력자 7일, 마감된 달 금지) → 실사 잠금 → 재고 행 잠금 후 수량·배정·지난 날짜 음수 검사 → 장비 상태·날짜 순서. 하나라도 걸리면 묶음 전체가 저장되지 않는다(INV-07). 모두 400이다.
+재고를 움직이는 모든 업무 동작은 같은 순서로 검사한다: 중복 요청 키(1.5) → 권한 → 업무 날짜(미래 금지, `RECORD_CORRECT` 없으면 7일, 마감된 달 금지) → 실사 잠금 → 재고 행 잠금 후 수량·배정·지난 날짜 음수 검사 → 장비 상태·날짜 순서. 하나라도 걸리면 묶음 전체가 저장되지 않는다(INV-07). 모두 400이다.
 
 | 코드 | 언제 | 관련 |
 |---|---|---|
-| `BUSINESS_DATE_FUTURE` / `BUSINESS_DATE_TOO_OLD` | 미래 날짜 / 입력자가 7일보다 지난 날짜 | INV-15·16 |
+| `BUSINESS_DATE_FUTURE` / `BUSINESS_DATE_TOO_OLD` | 미래 날짜 / `RECORD_CORRECT` 없이 7일보다 지난 날짜(`STOCK_ADJUST` 동작은 제외) | INV-15·16 |
 | `PERIOD_CLOSED` | 마감된 달의 날짜로 처리·취소 | INV-15·46 |
 | `STOCK_COUNT_LOCKED` | 실사 중인 위치·제품. `details`에 실사 번호 | INV-48 |
 | `STOCK_INSUFFICIENT` / `STOCK_NEGATIVE_ON_PAST_DATE` | 재고 부족 / 지난 날짜 이후 어느 날 음수. `details`에 재고 키·날짜 | INV-03·14 |
@@ -287,7 +292,7 @@
 - PDF를 읽어 문서를 채우는 기능은 보류했다. 거래 문서는 사람이 입력하고 파일은 증빙으로만 붙는다 (#104). API는 `/api/v1/importing/attachment` 아래 4개(목록·올리기·열기·떼기), 복구는 삭제 목록 API(`entityType=ATTACHMENT`).
 - 첫 대상은 거래 문서(`targetType=TRADE_DOCUMENT`) 하나다. 대상은 종류+ID라 나중에 납품·대차 등에 붙일 때는 종류 코드와 권한 규칙만 더한다.
 - 형식 PDF·JPG·JPEG·PNG, 파일당 20MB. 확장자와 파일 앞부분 서명이 모두 맞아야 한다.
-- 열기·내려받기는 관리자와 금액 보기 권한자만(INV-86). 목록(이름·크기·올린 사람)은 문서를 볼 수 있는 사람 모두.
+- 열기·내려받기는 `COST_VIEW`가 있는 사람만(INV-86). 목록(이름·크기·올린 사람)은 문서를 볼 수 있는 사람 모두.
 - 같은 내용(SHA-256)이 이미 붙어 있으면 1.4의 저장 전 확인 방식으로 경고한다(`FILE_DUPLICATE`). 확인하면 별도 파일로 저장한다. 파일 이름은 판별에 쓰지 않는다.
 - 저장 위치: 리눅스 서버 디스크. 최상위 폴더는 설정 `app.attachment.root`(기본 `/srv/asset/files`), 그 아래 `{대상 종류}/{연}/{월}/{파일ID}.{확장자}`. 예: `trade-document/2026/11/0193f5c2-….pdf`. DB에는 이 상대 경로만 둔다. 영구 보관하고 덮어쓰거나 지우지 않는다. 백업 대상에 이 폴더를 넣는다(ISS-10).
 
@@ -309,9 +314,10 @@ API 하나가 한 행이다. 행을 열면 개요 → 요청 → 응답 → 오�
 
 | 객체 | 필드 |
 |---|---|
-| `Me` | id, loginId, name, roles[`ADMIN`·`OPERATOR`·`VIEWER`], permissions[`COST_VIEW`·`COST_EDIT`], mustChangePassword |
-| `User` | id, loginId, name, email, isActive, roles[], permissions[], lastLoginAt, createdAt, updatedAt, version |
-| `Role` | code, name |
+| `Me` | id, loginId, name, role{id, code, name}, permissions[권한 코드, 역할의 권한], mustChangePassword (2026-11-26 roles[] → role) |
+| `User` | id, loginId, name, email, isActive, role{id, code, name}, lastLoginAt, createdAt, updatedAt, version (2026-11-26 roles[]·permissions[] → role) |
+| `Role` | id, code, name, description, permissions[권한 코드], createdAt, updatedAt, version (2026-11-26) |
+| `Permission` | code, name, description (2026-11-26) |
 | `Product` | id, itemCode, productName, modelName, category{id, code, name}, manufacturer, componentRole, specification, unit, serialManaged, isActive, hasHistory, note, createdAt, updatedAt, version. `hasHistory`는 처리 이력이 있는지(삭제·Item Code 변경·시리얼 관리 변경 가능 여부를 화면이 미리 알기 위함) |
 | `ProductChange` | id, fieldName, oldValue, newValue, reason, changedBy{id, name}, changedAt |
 | `Category` | id, code, name, sortOrder, isActive |
