@@ -69,7 +69,7 @@
 
 | 스키마 | 테이블 | 모듈 | 단계 |
 |---|---|---|---|
-| auth | users, roles, user_roles, user_permissions, spring_session, spring_session_attributes | user | 1 |
+| auth | users, permissions, roles, role_permissions, spring_session, spring_session_attributes | user | 1 |
 | product | product_categories, products, product_changes, bundles, bundle_components | product | 1 |
 | warehouse | warehouses, locations | warehouse | 1 |
 | partner | partners, partner_roles, contacts | partner | 1 |
@@ -98,24 +98,31 @@
 | password_hash | varchar(200) | N |  | 평문 저장 금지 |
 | is_active | boolean | N | 기본 true | 퇴사·비활성 |
 | last_login_at | timestamptz | Y |  |  |
+| role_id | uuid | N | FK roles | 역할 하나 (2026-11-26 추가, #106). 바꾸면 tokens_valid_after를 기록한다 |
 | must_change_password | boolean | N | 기본 false | 다음 로그인 때 비밀번호 변경 필요. 관리자가 계정을 만들거나 비밀번호를 초기화하면 true, 본인이 바꾸면 false. true인 동안은 내 정보·비밀번호 변경·로그아웃만 가능 (2026-11-23 추가, #100) |
-| tokens_valid_after | timestamptz | Y |  | 세션 무효 기준 시각. 역할·금액 권한·사용 여부·로그인 ID·비밀번호를 바꾸면 지금으로 기록한다. 이보다 먼저 로그인한 세션은 끊는다. 이름은 토큰 방식 때 지은 것을 그대로 둔다 (2026-11-23, 2026-11-25 세션 방식으로 바꿈, API 명세서 1.3절) |
+| tokens_valid_after | timestamptz | Y |  | 세션 무효 기준 시각. 역할·사용 여부·로그인 ID·비밀번호를 바꾸면 지금으로 기록한다. 이보다 먼저 로그인한 세션은 끊는다. 이름은 토큰 방식 때 지은 것을 그대로 둔다 (2026-11-23, 2026-11-25 세션 방식으로 바꿈, API 명세서 1.3절) |
 | [DEL] |  |  |  | 소프트 삭제 (2026-11-23 추가, API 명세서 1.9절) |
 | [AUD] |  |  |  |  |
 
-### 3.2 auth.roles / user_roles / user_permissions — 역할과 권한
+### 3.2 auth.permissions / roles / role_permissions — 역할과 권한 (2026-11-26 바꿈, #106)
+
+권한 13개를 독립적으로 두고, 역할은 권한을 고른 묶음이며, 계정은 역할 하나를 갖는다([권한 매트릭스](https://app.notion.com/p/40ea7b147db34b08b8bdfff1001cc500) 1절). 예전 `user_roles`·`user_permissions`는 없앤다.
 
 | 테이블 | 컬럼 | 설명 |
 |---|---|---|
-| roles | id, code varchar(30) UNIQUE, name | ADMIN(관리자), OPERATOR(입력자), VIEWER(조회자). 인원·승인 범위는 ISS-1 |
-| user_roles | user_id, role_id (PK 복합) | 사용자별 역할 |
-| user_permissions | user_id, permission varchar(30) (PK 복합) | 역할과 별도로 주는 권한. COST_VIEW(금액 열람), COST_EDIT(금액 수정) |
+| permissions | code varchar(30) PK, name varchar(50), description varchar(200), sort_order smallint | 권한 13개. 마이그레이션으로만 넣고 화면에서 바꾸지 않는다(코드가 권한을 검사하므로). 코드의 권한 목록과 같은지 테스트한다 |
+| roles | id uuid PK, code varchar(30), name varchar(50), description varchar(200) Y, [AUD], [DEL], version | 역할. code는 만든 뒤 바꾸지 않고 대문자·숫자·밑줄(`^[A-Z][A-Z0-9_]*$`). code·name은 삭제된 것을 빼고 겹치지 않는다(`ux_roles_code`, `ux_roles_name`, 부분 유니크). 기본 역할 6개를 마이그레이션으로 넣는다: ADMIN 관리자, OPERATOR_BASIC 일반 운영자, OPERATOR_COST_VIEW 영업 운영자, OPERATOR_COST_EDIT 정산 운영자, USER_BASIC 일반 사용자, USER_COST_VIEW 회계 사용자 |
+| role_permissions | role_id FK roles, permission_code FK permissions (PK 복합) | 역할에 넣은 권한. ADMIN은 13개 전부이고 바꿀 수 없다(서비스에서 막음). COST_EDIT이 있으면 COST_VIEW도 있다(서비스에서 검사, INV-88) |
+
+- users에 `role_id uuid NOT NULL FK roles`를 더한다(3.1). 인덱스 `ix_users_role_id`(역할 삭제 전 사용 중인지 확인, R4).
+- 역할 삭제는 소프트 삭제다(#102). 그 역할인 계정(삭제된 계정 제외)이 있으면 지울 수 없다.
+- 관리자 역할 판별은 code `ADMIN`으로 한다(따로 표시 컬럼을 두지 않는다. 잠그는 역할이 하나뿐이다).
 
 ### 3.2.1 auth.spring_session / spring_session_attributes — 로그인 세션 (2026-11-25, `oauth2_authorization`을 바꿈)
 
 - Spring Session JDBC가 로그인 세션을 저장한다. 서버를 다시 켜도 로그인이 유지된다. 마지막 요청 뒤 8시간이 지나면 만료되고, Spring Session이 1분마다 만료된 행을 지운다 ([API 명세서](https://app.notion.com/p/408b82ca31e580d19b7ee382dacd572b) 1.3절, ADR "인증 방식: 세션 로그인").
 - 공통 규칙 예외: Spring 공식 스키마 그대로다(마이그레이션 V3). 이름만 소문자·auth 스키마·우리 제약 이름 규칙으로 바꿨다. 컬럼 이름이나 타입을 바꾸면 Spring이 읽지 못한다.
-- principal_name은 users.id(문자열)다. 외래 키는 걸지 않는다(Spring이 관리). attributes에는 사용자 ID와 로그인 시각만 직렬화해 저장한다. 역할·금액 권한은 요청마다 users·user_roles·user_permissions에서 읽는다 (2026-11-25).
+- principal_name은 users.id(문자열)다. 외래 키는 걸지 않는다(Spring이 관리). attributes에는 사용자 ID와 로그인 시각만 직렬화해 저장한다. 권한은 요청마다 users·role_permissions에서 읽는다 (2026-11-25, 2026-11-26 역할·권한 체계 변경).
 - 2026-11-25: 토큰 방식(`oauth2_authorization`)을 세션 방식으로 바꾸면서 V3 마이그레이션으로 지웠다.
 
 | 테이블 | 컬럼 |
@@ -445,7 +452,7 @@ CHECK (opening_fulfilled_quantity + fulfilled_quantity + closed_quantity \<= qua
 
 ### 5.11 cost — 금액 (권한 분리 스키마)
 
-금액은 이 스키마에만 저장한다. COST_VIEW·COST_EDIT 권한이 없는 사용자는 API에서도 접근할 수 없다 (COST-04). 산식·세금·원가 배분은 ISS-4, ISS-16 확정 후 컬럼을 보완한다.
+금액은 이 스키마에만 저장한다. COST_VIEW·COST_EDIT 권한이 없는 사용자는 API에서도 접근할 수 없다 (COST-04, 권한 매트릭스 3.3). 산식·세금·원가 배분은 ISS-4, ISS-16 확정 후 컬럼을 보완한다.
 
 | 테이블 | 컬럼 | 설명 |
 |---|---|---|
@@ -532,7 +539,7 @@ stock_transactions.source_type/source_id ──> 업무 모듈 (느슨한 참조
 
 | 이슈 | 영향 테이블·컬럼 | 현재 가정 |
 |---|---|---|
-| ISS-1 권한 | auth.roles, user_permissions | ADMIN / OPERATOR / VIEWER + 금액 권한 2종 |
+| ISS-1 권한 | auth.permissions, roles, role_permissions | 2026-11-26: 권한 13개 + 관리자가 만드는 역할, 기본 역할 6개(#106). 승인 범위가 정해지면 권한을 나눌 수 있다 |
 | ISS-2 시리얼 범위 | equipment.serial_no 유니크 범위 | 제품별 유니크, 미확인은 NULL |
 | ISS-3 보증 기준 | warranties.basis, 만료 알림 테이블 | 2026-11-23 확정(#95): basis CHECK IN ('DELIVERY','MANUFACTURER','PURCHASE','MANUAL'), 만료 30일 전 알림 WARRANTY_EXPIRING |
 | ISS-4·16 금액 산식·원가 | cost 스키마 전체, 원가 계산 결과 테이블 | 단가·부대비용 저장, 통화·환율 컬럼 준비 (KRW 기본값). 원가·마진 산식과 초기 재고 단가(opening_costs)는 확정(#79–#81), 계산 결과 테이블은 두지 않음. 환율 기준일·출처와 금액 마감은 외화 사용 시 결정 |
