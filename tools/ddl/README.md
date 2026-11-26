@@ -9,7 +9,7 @@
 | `gen.py` | 테이블·컬럼·FK·CHECK·인덱스 정의(원본). `out/asset_schema_postgresql.sql`(전체), `out/asset_schema_erdcloud_mysql.sql`(ERD 도구용) 생성 |
 | `gen3.py` | `gen.py`를 읽어 제약을 핵심(v1, 26개)과 나중(v2, 109개)으로 나누고 `asset_v1_create.sql`, `asset_v2_constraints.sql`, `asset_prod_full.sql` 생성. 보강 제안 P1–P5(11건) 포함 |
 | `proposals.sql` | 검증용: 전체 DDL에 보강 제안만 더한 것 |
-| `verify.sh` | PostgreSQL 18에서 (v1 + v2) = 운영 최종본 = (전체 DDL + 제안) 인지 카탈로그로 비교 |
+| `verify.sh` | PostgreSQL 18에서 (v1 + v2) = 운영 최종본 = (전체 DDL + 제안), 그리고 v1 = Flyway V1~Vn 인지 카탈로그로 비교 |
 | `test/run_check_tests.sh` | 점검 쿼리 C9–C15 시험: 정상 시험 데이터는 0행, 일부러 틀어 놓은 11가지는 모두 잡혀야 한다 |
 | `test/c9_c15.sql`, `test/c9_c15_seed_uuid.sql` | 위 시험의 쿼리와 시험 데이터 |
 
@@ -19,9 +19,11 @@
 cd tools/ddl
 python3 gen.py out && python3 gen3.py out          # out/ 에 DDL 생성
 export PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=...   # PostgreSQL 18
-./verify.sh                    # IDENTICAL 두 번, tables 54 / columns 639
+./verify.sh                    # IDENTICAL 세 번, tables 55 / columns 627
 ./test/run_check_tests.sh      # [정상] 0행, X1–X11 모두 결과 행 있음
 ```
 
-- `verify.sh`·`run_check_tests.sh`는 검증용 DB(`dba`, `dbb`, `dbc`, `dbv1`, `dbt`)를 지웠다 다시 만든다. 운영·개발 DB 서버에서 실행하지 않는다.
+- `verify.sh`·`run_check_tests.sh`는 검증용 DB(`dba`, `dbb`, `dbc`, `dbv1`, `dbfly`, `dbt`)를 지웠다 다시 만든다. 운영·개발 DB 서버에서 실행하지 않는다.
 - 2026-11-24 기준 결과: 테이블 54, 컬럼 639, 외래 키 102, 핵심 제약 26, v2 제약 109, 보강 제안 11. 생성 결과는 `docs/db/ddl/`과 바이트 단위로 같다.
+- 2026-11-26: Flyway V2~V5(중복 요청 응답 json, 세션 로그인 테이블, 원래 통화 금액 소수 4자리, 역할·권한 체계 #106)를 `gen.py`에 반영하고 다시 만들었다. 결과: 테이블 55, 컬럼 627, 외래 키 103, 핵심 제약 26 + 나중 마이그레이션이 건 제약 4(`gen3.py`의 APPLIED), v2 제약 107, 보강 제안 11. v1 = Flyway V1~V5, (v1 + v2) = 운영 최종본 = (전체 DDL + 제안)이 모두 같고 초기 데이터도 같다. 생성 결과는 `docs/db/ddl/`과 같다.
+- 앞으로 Flyway에 DB 변경을 더하면 `gen.py`도 같이 고치고 다시 만든 뒤 `verify.sh`로 v1 = Flyway를 확인한다. 그래야 `docs/db/ddl/`이 지금 구조를 보여 준다.

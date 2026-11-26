@@ -1,8 +1,8 @@
 -- ============================================================
 -- 자산관리 시스템 PostgreSQL DDL — ② 추후 수정용 (v2, 제약 추가)
--- 생성: 2026-11-24 / 기준: 노션 '테이블 정의서', '불변 조건 목록'
+-- 생성: 2026-11-26 / 기준: 노션 '테이블 정의서', '불변 조건 목록'
 -- 대상: PostgreSQL 18 이상 (uuidv7(), UNIQUE NULLS NOT DISTINCT 사용)
--- 전제: asset_v1_create.sql이 적용된 DB
+-- 전제: asset_v1_create.sql이 적용된 DB (= Flyway V1~V5가 적용된 DB)
 -- 내용: v1에서 뺀 CHECK·UNIQUE·부분 유니크 + 보강 제안 P1~P5
 -- 주의: ADD CONSTRAINT는 기존 데이터를 검사한다. 위반 데이터가 있으면 실패하고
 --       전체가 롤백되므로, 실패 메시지의 제약 이름으로 데이터를 정리한 뒤 다시 실행한다.
@@ -12,12 +12,6 @@
 BEGIN;
 
 -- ---------------------------------------------------------------- v1에서 미룬 제약
--- auth.roles — 역할
-ALTER TABLE auth.roles ADD CONSTRAINT uq_roles_code UNIQUE (code);
-
--- auth.user_permissions — 사용자 추가 권한
-ALTER TABLE auth.user_permissions ADD CONSTRAINT ck_user_permissions_1 CHECK (permission IN ('COST_VIEW', 'COST_EDIT'));
-
 -- product.product_categories — 품목군
 CREATE UNIQUE INDEX ux_product_categories_code ON product.product_categories (code) WHERE deleted_at IS NULL;
 

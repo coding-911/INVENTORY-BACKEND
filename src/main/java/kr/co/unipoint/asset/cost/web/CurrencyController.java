@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 통화 목록·추가·수정 (API 목록 "통화 목록", "통화 추가", "통화 수정"). 목록은 로그인한 누구나(금액이 아닌 코드 표), 추가·수정은 관리자만 (권한
+ * 통화 목록·추가·수정 (API 목록 "통화 목록", "통화 추가", "통화 수정"). 목록은 로그인한 누구나(금액이 아닌 코드 표), 추가·수정은 {@code MASTER_MANAGE} (권한
  * 매트릭스 3.1·3.3). 삭제 API는 없다. 금액 기록이 참조하므로 쓰지 않으면 끈다 (API 명세서 1.9).
  */
 @RestController
@@ -42,7 +42,7 @@ class CurrencyController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('MASTER_MANAGE')")
     ApiResponse<CurrencyResponse> add(@Valid @RequestBody CurrencyCreateRequest request) {
         return ApiResponse.created(CurrencyResponse.from(currencyService.add(
                 request.code(),
@@ -52,7 +52,7 @@ class CurrencyController {
     }
 
     @PatchMapping("/{code}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('MASTER_MANAGE')")
     ApiResponse<CurrencyResponse> update(@PathVariable String code, @Valid @RequestBody CurrencyUpdateRequest request) {
         return ApiResponse.ok(CurrencyResponse.from(currencyService.update(code, request.name(), request.isActive())));
     }

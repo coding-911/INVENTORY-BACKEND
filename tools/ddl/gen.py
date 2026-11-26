@@ -53,10 +53,24 @@ TABLES = []
 
 
 def T(schema, name, comment, cols, pk=("id",), uniques=(), checks=(), fks=(),
-      indexes=(), pg_extra=()):
+      indexes=(), pg_extra=(), no_fk_index=()):
+    """fks: (컬럼, 참조 테이블[, 참조 컬럼[, ON DELETE 동작]]). no_fk_index: FK 조회 인덱스를 따로 만들지 않을 컬럼
+    (기본 키 앞부분이라 이미 인덱스가 있거나, 그 값으로 찾을 일이 없는 것)."""
     TABLES.append(dict(schema=schema, name=name, comment=comment, cols=cols, pk=list(pk),
                        uniques=list(uniques), checks=list(checks), fks=list(fks),
-                       indexes=list(indexes), pg_extra=list(pg_extra)))
+                       indexes=list(indexes), pg_extra=list(pg_extra), no_fk_index=list(no_fk_index)))
+
+
+def fk_parts(fk):
+    """(컬럼, 참조 테이블 정의, 참조 컬럼, ' ON DELETE …' 또는 '')"""
+    ref = BY_NAME[fk[1]]
+    refcol = fk[2] if len(fk) > 2 and fk[2] else ref["pk"][0]
+    on_delete = f" ON DELETE {fk[3]}" if len(fk) > 3 else ""
+    return fk[0], ref, refcol, on_delete
+
+
+def fk_indexes(t):
+    return [fk[0] for fk in t["fks"] if fk[0] not in t["no_fk_index"]]
 
 
 # ================================================================ auth
@@ -68,63 +82,66 @@ T("auth", "users", "사용자", [
     C("password_hash", "varchar(200)", True, comment="비밀번호 해시"),
     C("is_active", "boolean", True, "true", "사용 여부"),
     C("last_login_at", "timestamptz", comment="마지막 로그인"),
-    C("tokens_valid_after", "timestamptz", comment="토큰 무효 기준 시각"),
+    C("tokens_valid_after", "timestamptz", comment="세션 무효 기준 시각. 이보다 먼저 로그인한 세션은 끊는다"),
     C("must_change_password", "boolean", True, "false", "다음 로그인 때 비밀번호 변경 필요"),
-    *AUD(), *DEL()],
+    *AUD(), *DEL(),
+    C("role_id", "uuid", True, comment="역할 (계정마다 하나)")],
+  fks=[("role_id", "roles")],
   pg_extra=["CREATE UNIQUE INDEX ux_users_login_id ON auth.users (login_id) WHERE deleted_at IS NULL;"])
+
+# 2026-11-26 역할·권한 체계 (Flyway V5, 확정 사항 #106). 예전 user_roles·user_permissions는 없앴다.
+T("auth", "permissions", "권한 (시스템이 정함, 화면에서 추가·삭제하지 않음)", [
+    C("code", "varchar(30)", True, comment="권한 코드"),
+    C("name", "varchar(50)", True, comment="권한 이름"),
+    C("description", "varchar(200)", True, comment="이 권한으로 할 수 있는 일"),
+    C("sort_order", "smallint", True, comment="보여 주는 순서")],
+  pk=("code",))
 
 T("auth", "roles", "역할", [
     ID(),
-    C("code", "varchar(30)", True, comment="역할 코드"),
-    C("name", "varchar(100)", True, comment="역할명")], uniques=[["code"]])
+    C("code", "varchar(30)", True, comment="역할 코드 (만든 뒤 바꾸지 않음, 대문자·숫자·밑줄)"),
+    C("name", "varchar(50)", True, comment="역할 이름"),
+    C("description", "varchar(200)", comment="설명"),
+    # 기본 역할은 마이그레이션으로 넣어 만든 사람이 없다. 그래서 roles만 created_by NULL 허용
+    C("created_at", "timestamptz", True, "now()", "만든 시각"),
+    C("created_by", "uuid", comment="만든 사람 (기본 역할은 NULL)"),
+    C("updated_at", "timestamptz", comment="고친 시각"),
+    C("updated_by", "uuid", comment="고친 사람"),
+    C("version", "integer", True, "0", "낙관적 잠금 버전"),
+    C("deleted_at", "timestamptz", comment="삭제 시각 (소프트 삭제)"),
+    C("deleted_by", "uuid", comment="삭제한 사람")],
+  pg_extra=["ALTER TABLE auth.roles ADD CONSTRAINT ck_roles_code CHECK (code ~ '^[A-Z][A-Z0-9_]*$');",
+            "CREATE UNIQUE INDEX ux_roles_code ON auth.roles (code) WHERE deleted_at IS NULL;",
+            "CREATE UNIQUE INDEX ux_roles_name ON auth.roles (name) WHERE deleted_at IS NULL;"])
 
-T("auth", "user_roles", "사용자 역할", [
-    C("user_id", "uuid", True, comment="사용자"),
-    C("role_id", "uuid", True, comment="역할")],
-  pk=("user_id", "role_id"),
-  fks=[("user_id", "users"), ("role_id", "roles")])
+T("auth", "role_permissions", "역할에 넣은 권한", [
+    C("role_id", "uuid", True, comment="역할"),
+    C("permission_code", "varchar(30)", True, comment="권한")],
+  pk=("role_id", "permission_code"),
+  fks=[("role_id", "roles"), ("permission_code", "permissions")],
+  no_fk_index=("role_id", "permission_code"))
 
-T("auth", "user_permissions", "사용자 추가 권한", [
-    C("user_id", "uuid", True, comment="사용자"),
-    C("permission", "varchar(30)", True, comment="권한(COST_VIEW/COST_EDIT)")],
-  pk=("user_id", "permission"),
-  checks=[inlist("permission", ["COST_VIEW", "COST_EDIT"])],
-  fks=[("user_id", "users")])
+# 2026-11-25 로그인을 OAuth2 토큰에서 서버 세션으로 바꿈 (Flyway V3). spring-session-jdbc 4.1 공식 스키마
+T("auth", "spring_session", "로그인 세션(Spring Session JDBC)", [
+    C("primary_id", "char(36)", True, comment="내부 ID"),
+    C("session_id", "char(36)", True, comment="세션 ID(쿠키 값). 로그인할 때 바뀐다"),
+    C("creation_time", "bigint", True, comment="만든 시각(epoch 밀리초)"),
+    C("last_access_time", "bigint", True, comment="마지막 요청 시각(epoch 밀리초)"),
+    C("max_inactive_interval", "integer", True, comment="요청이 없으면 끝나는 시간(초)"),
+    C("expiry_time", "bigint", True, comment="만료 시각(epoch 밀리초)"),
+    C("principal_name", "varchar(100)", comment="사용자 ID(auth.users.id)")],
+  pk=("primary_id",),
+  indexes=[["expiry_time"], ["principal_name"]],
+  pg_extra=["CREATE UNIQUE INDEX ux_spring_session_session_id ON auth.spring_session (session_id);"])
 
-T("auth", "oauth2_authorization", "로그인 토큰(Spring Authorization Server)", [
-    C("id", "varchar(100)", True, comment="인가 ID"),
-    C("registered_client_id", "varchar(100)", True, comment="클라이언트 ID"),
-    C("principal_name", "varchar(200)", True, comment="사용자(로그인 ID)"),
-    C("authorization_grant_type", "varchar(100)", True, comment="인가 방식"),
-    C("authorized_scopes", "varchar(1000)", comment="허용 범위"),
-    C("attributes", "text", comment="속성"),
-    C("state", "varchar(500)", comment="상태 값"),
-    C("authorization_code_value", "text", comment="인가 코드"),
-    C("authorization_code_issued_at", "timestamp", comment="인가 코드 발급 시각"),
-    C("authorization_code_expires_at", "timestamp", comment="인가 코드 만료 시각"),
-    C("authorization_code_metadata", "text", comment="인가 코드 메타데이터"),
-    C("access_token_value", "text", comment="access token"),
-    C("access_token_issued_at", "timestamp", comment="access token 발급 시각"),
-    C("access_token_expires_at", "timestamp", comment="access token 만료 시각"),
-    C("access_token_metadata", "text", comment="access token 메타데이터"),
-    C("access_token_type", "varchar(100)", comment="access token 유형"),
-    C("access_token_scopes", "varchar(1000)", comment="access token 범위"),
-    C("oidc_id_token_value", "text", comment="ID 토큰"),
-    C("oidc_id_token_issued_at", "timestamp", comment="ID 토큰 발급 시각"),
-    C("oidc_id_token_expires_at", "timestamp", comment="ID 토큰 만료 시각"),
-    C("oidc_id_token_metadata", "text", comment="ID 토큰 메타데이터"),
-    C("refresh_token_value", "text", comment="refresh token"),
-    C("refresh_token_issued_at", "timestamp", comment="refresh token 발급 시각"),
-    C("refresh_token_expires_at", "timestamp", comment="refresh token 만료 시각"),
-    C("refresh_token_metadata", "text", comment="refresh token 메타데이터"),
-    C("user_code_value", "text", comment="기기 인증 사용자 코드"),
-    C("user_code_issued_at", "timestamp", comment="사용자 코드 발급 시각"),
-    C("user_code_expires_at", "timestamp", comment="사용자 코드 만료 시각"),
-    C("user_code_metadata", "text", comment="사용자 코드 메타데이터"),
-    C("device_code_value", "text", comment="기기 코드"),
-    C("device_code_issued_at", "timestamp", comment="기기 코드 발급 시각"),
-    C("device_code_expires_at", "timestamp", comment="기기 코드 만료 시각"),
-    C("device_code_metadata", "text", comment="기기 코드 메타데이터")])
+T("auth", "spring_session_attributes", "로그인 세션 속성", [
+    C("session_primary_id", "char(36)", True, comment="세션"),
+    C("attribute_name", "varchar(200)", True, comment="속성 이름"),
+    C("attribute_bytes", "bytea", True, comment="속성 값(직렬화)")],
+  pk=("session_primary_id", "attribute_name"),
+  fks=[("session_primary_id", "spring_session", None, "CASCADE")],
+  no_fk_index=("session_primary_id",))
+
 
 # ================================================================ product
 T("product", "product_categories", "품목군", [
@@ -838,7 +855,7 @@ T("common", "idempotency_keys", "중복 요청 키", [
     C("request_hash", "varchar(64)", True, comment="요청 내용 해시"),
     C("status", "varchar(20)", True, "'IN_PROGRESS'", "처리 상태"),
     C("response_status", "integer", comment="처음 응답 HTTP 상태"),
-    C("response_body", "jsonb", comment="처음 응답 본문"),
+    C("response_body", "json", comment="처음 응답 본문"),
     C("created_at", "timestamptz", True, "now()", "받은 시각"),
     C("completed_at", "timestamptz", comment="끝난 시각")],
   pk=("idempotency_key",),
@@ -912,10 +929,37 @@ INSERT INTO product.product_categories (code, name, sort_order) VALUES
     ('TH_SENSOR', '온습도 센서', 6),
     ('COOLING', '쿨링 시스템', 7);
 
-INSERT INTO auth.roles (code, name) VALUES
-    ('ADMIN', '관리자'),
-    ('OPERATOR', '입력자'),
-    ('VIEWER', '조회자');
+INSERT INTO auth.permissions (code, name, description, sort_order) VALUES
+    ('PARTNER_MANAGE', '거래처 관리', '거래처·담당자 등록·수정·삭제', 1),
+    ('PRODUCT_MANAGE', '제품 관리', '제품 등록·수정·삭제', 2),
+    ('MASTER_MANAGE', '기준 정보 관리', '품목군·창고·위치·통화·구성 묶음 관리, 제품 사용 중지·다시 사용', 3),
+    ('DOCUMENT_MANAGE', '거래 문서 관리', '프로젝트·거래 문서 등록·수정·확정·취소·삭제, 비교·복사, 첨부 올리기·떼기', 4),
+    ('STOCK_OPERATE', '재고 처리', '입고·출고·이동·검수·배정·납품·반품·교체·대차·실사·수리·보증, 처리 취소·정정, 폐기·대여 출고 요청', 5),
+    ('STOCK_ADJUST', '재고 조정', '재고 조정, 초기 재고 넣기, 기준일 이전 등록(납품 장비·처리 수량)', 6),
+    ('APPROVE', '승인', '승인·반려·사후 확인, 승인·확인 대기함 전체 보기', 7),
+    ('CLOSING', '마감', '월 마감·해제, 거래 품목 잔량 마감', 8),
+    ('RECORD_CORRECT', '기록 정정', '7일보다 지난 날짜, 실사 중 범위 처리, 확정 문서의 프로젝트·거래처 변경, 이력 있는 제품의 Item Code 변경, 납품한 장비의 시리얼 변경, 정산 방식 바꾸기', 9),
+    ('AUDIT_VIEW', '감사 조회', '정합성 점검 결과 보기·지금 실행, 통합 변경 이력, 제품 변경 이력', 10),
+    ('USER_MANAGE', '계정·역할 관리', '계정 목록·하나·만들기·수정·삭제, 비밀번호 초기화, 역할 만들기·수정·삭제', 11),
+    ('COST_VIEW', '금액 보기', '응답의 금액 필드, 금액 이력·부대비용·마진·평가액 조회, 첨부 열기·내려받기', 12),
+    ('COST_EDIT', '금액 수정', '단가·부대비용·대여료·초기 재고 단가 넣기·고치기·비우기', 13);
+
+INSERT INTO auth.roles (code, name, description) VALUES
+    ('ADMIN', '관리자', '모든 권한. 고치거나 지울 수 없다'),
+    ('OPERATOR_BASIC', '일반 운영자', '거래처·제품·거래 문서 관리와 재고 처리'),
+    ('OPERATOR_COST_VIEW', '영업 운영자', '일반 운영자 + 금액 보기'),
+    ('OPERATOR_COST_EDIT', '정산 운영자', '일반 운영자 + 금액 보기·수정'),
+    ('USER_BASIC', '일반 사용자', '보기만 한다(금액 제외)'),
+    ('USER_COST_VIEW', '회계 사용자', '보기만 한다(금액 포함)');
+
+INSERT INTO auth.role_permissions (role_id, permission_code)
+SELECT r.id, p.code
+FROM auth.roles r
+JOIN auth.permissions p ON
+    r.code = 'ADMIN'
+    OR (r.code LIKE 'OPERATOR\\_%' AND p.code IN ('PARTNER_MANAGE', 'PRODUCT_MANAGE', 'DOCUMENT_MANAGE', 'STOCK_OPERATE'))
+    OR (r.code IN ('OPERATOR_COST_VIEW', 'OPERATOR_COST_EDIT', 'USER_COST_VIEW') AND p.code = 'COST_VIEW')
+    OR (r.code = 'OPERATOR_COST_EDIT' AND p.code = 'COST_EDIT');
 """
 
 # ---------------------------------------------------------------- 생성기
@@ -968,17 +1012,16 @@ def gen_pg():
     out.append("-- ---------------------------------------------------------------- 외래 키")
     for t in TABLES:
         for fk in t["fks"]:
-            col, ref = fk[0], BY_NAME[fk[1]]
-            refcol = fk[2] if len(fk) > 2 else ref["pk"][0]
+            col, ref, refcol, on_delete = fk_parts(fk)
             out.append(f'ALTER TABLE {q(t)} ADD CONSTRAINT fk_{t["name"]}_{col} '
-                       f'FOREIGN KEY ({col}) REFERENCES {q(ref)} ({refcol});')
+                       f'FOREIGN KEY ({col}) REFERENCES {q(ref)} ({refcol}){on_delete};')
     out.append("")
     out.append("-- ---------------------------------------------------------------- 인덱스·부분 유니크·트리거")
     for t in TABLES:
         for idx in t["indexes"]:
             out.append(f'CREATE INDEX ix_{t["name"]}_{"_".join(idx)[:40]} ON {q(t)} ({", ".join(idx)});')
-        for fk in t["fks"]:
-            out.append(f'CREATE INDEX ix_{t["name"]}_{fk[0]} ON {q(t)} ({fk[0]});')
+        for col in fk_indexes(t):
+            out.append(f'CREATE INDEX ix_{t["name"]}_{col} ON {q(t)} ({col});')
         for extra in t["pg_extra"]:
             out.append(extra)
     out.append("")
@@ -1001,7 +1044,7 @@ def my_type(c):
     t = c["type"]
     if t == "IDENTITY":
         return "BIGINT AUTO_INCREMENT"
-    m = {"timestamptz": "DATETIME(6)", "boolean": "BOOLEAN", "uuid": "CHAR(36)", "jsonb": "JSON",
+    m = {"timestamptz": "DATETIME(6)", "boolean": "BOOLEAN", "uuid": "CHAR(36)", "jsonb": "JSON", "json": "JSON",
          "text": "TEXT", "bigint": "BIGINT", "integer": "INT", "smallint": "SMALLINT",
          "date": "DATE"}
     if t in m:
@@ -1043,10 +1086,9 @@ def gen_mysql():
         for u in t["uniques"]:
             lines.append(f'    UNIQUE KEY `uq_{t["name"]}_{"_".join(u)}` ({", ".join("`"+x+"`" for x in u)})')
         for fk in t["fks"]:
-            col, ref = fk[0], BY_NAME[fk[1]]
-            refcol = fk[2] if len(fk) > 2 else ref["pk"][0]
+            col, ref, refcol, on_delete = fk_parts(fk)
             lines.append(f'    CONSTRAINT `fk_{t["name"]}_{col}` FOREIGN KEY (`{col}`) '
-                         f'REFERENCES `{ref["name"]}` (`{refcol}`)')
+                         f'REFERENCES `{ref["name"]}` (`{refcol}`){on_delete}')
         for i, ck in enumerate(t["checks"], 1):
             lines.append(f'    CONSTRAINT `ck_{t["name"]}_{i}` CHECK ({ck})')
         out.append(f"CREATE TABLE `{t['name']}` (\n" + ",\n".join(lines) +

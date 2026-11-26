@@ -93,7 +93,7 @@ public class LoginService {
                 account.id(),
                 account.loginId(),
                 account.name(),
-                account.roles(),
+                account.role(),
                 account.permissions(),
                 account.mustChangePassword());
     }
@@ -101,10 +101,8 @@ public class LoginService {
     public record LoginResult(LoginUser user, UserProfile profile) {}
 
     public record UserProfile(
-            UUID id,
-            String loginId,
-            String name,
-            List<String> roles,
-            List<String> permissions,
-            boolean mustChangePassword) {}
+            UUID id, String loginId, String name, RoleRef role, List<String> permissions, boolean mustChangePassword) {}
+
+    /** 계정의 역할 (응답 {@code Me}·{@code User}의 role, API 명세서 3절). */
+    public record RoleRef(UUID id, String code, String name) {}
 }
