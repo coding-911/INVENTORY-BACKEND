@@ -1,7 +1,7 @@
 # 백엔드 기술 스택
 
 > 원본(노션): https://app.notion.com/p/422b82ca31e58168bf53c6862f5c4c07  
-> 내보낸 날짜: 2026-11-24. **노션이 원본이다.** 이 파일과 노션이 다르면 노션을 따른다.
+> 내보낸 날짜: 2026-11-27. **노션이 원본이다.** 이 파일과 노션이 다르면 노션을 따른다.
 
 > 🧰 백엔드에서 쓰는 기술과 버전, 쓰지 않는 기술과 이유를 정리한다 (2026-11-24 결정). 코드 작성 규칙은 [개발 컨벤션](https://app.notion.com/p/c9a23b67b2234b118a564059d27fcce2), 패키지 구조는 [디렉토리 구조](https://app.notion.com/p/408b82ca31e5802da847f03723e75a89)를 본다.
 
@@ -33,7 +33,7 @@
 | DB | PostgreSQL | 18 (18.x 최신 패치) | 모듈별 스키마. 공식 지원 2030-11까지. `uuidv7()` 내장. DDL은 18.7에서 검증(2026-11-24) |
 | DB 마이그레이션 | Flyway (core + database-postgresql) ★ | Boot 관리 | 스키마 변경 이력. 운영에서는 Hibernate가 테이블을 만들지 않는다(`ddl-auto=validate`) |
 | JSON | Jackson 3 ★ | Boot 관리 | 금액은 문자열, 기록 시각은 시간대 포함 (API 명세서 1.8) |
-| API 문서 | springdoc-openapi (webmvc-ui) | 3.x | Boot 4 전용 버전. 코드에서 OpenAPI를 만들고, 프론트의 TypeScript 타입도 여기서 만든다. 운영에서는 문서 화면을 끄거나 관리자만 |
+| API 문서 | springdoc-openapi (webmvc-ui) | 3.x | Boot 4 전용 버전. 코드에서 OpenAPI를 만들고, 프론트의 TypeScript 타입도 여기서 만든다. API를 바꾸는 PR에는 빌드가 만든 `docs/api/openapi.json`을 함께 커밋하고, CI가 최신인지 비교한다(프론트 저장소가 이 파일에서 타입을 만든다, ADR-18). 운영에서는 문서 화면을 끄거나 관리자만 |
 | 코드 줄이기 | Lombok ★ | Boot 관리 | 쓸 수 있는 애너테이션을 제한한다 (개발 컨벤션 2절) |
 | 객체 변환 | MapStruct | 1.6.x | 엔티티 → 응답 DTO만. 요청 → 엔티티에는 쓰지 않는다 (개발 컨벤션 3절). Lombok과 함께 쓸 때 `lombok-mapstruct-binding`을 넣는다 |
 | 캐시 | Spring Cache + Caffeine ★ | Boot 관리 | 서버 메모리 캐시. 바뀌는 일이 드문 기준 정보처럼 짧게 캐시할 값만. 재고·금액은 캐시하지 않는다 |
@@ -46,7 +46,7 @@
 | 코드 형식 | Spotless + Palantir Java Format | 최신 (Gradle 플러그인) | 빌드 때 형식을 검사하고 `spotlessApply`로 자동 정리. 4칸 들여쓰기 |
 | 테스트 범위 | JaCoCo | Gradle 내장 | 테스트가 닿은 코드 비율 보고서. 기준치는 개발하며 정한다 |
 | 실행 환경 | Docker, Docker Compose | Docker Engine 최신, Compose v2 | 앱·PostgreSQL·Nginx를 컨테이너로. 앱 이미지는 Temurin 25 JRE 기반, Boot의 계층형 jar |
-| 웹 서버 | Nginx | stable | HTTPS, 프론트 화면(정적 파일) 제공, `/api`를 앱으로 전달. 업로드 한도 20MB에 맞춤. 첨부 폴더는 직접 서비스하지 않는다 |
+| 웹 서버 | Nginx | stable | HTTPS, 프론트 화면(정적 파일) 제공, `/api`를 앱으로 전달. 업로드 한도 20MB에 맞춤. 첨부 폴더는 직접 서비스하지 않는다. 응답 헤더 `Referrer-Policy: same-origin`(화면 주소가 외부로 넘어가지 않게, 화면 목록 2절) |
 | 서버 | 리눅스 사내 서버 | 배포판은 설치 때 정함 | 첨부 파일 `/srv/asset/files`, DB 데이터는 서버 디스크 볼륨 |
 | 형상 관리 | Git, GitHub | — | main 브랜치 보호, Pull Request로 합침 |
 | CI | GitHub Actions | — | Pull Request마다 형식 검사·빌드·전체 테스트(Testcontainers 포함). Gradle 캐시 사용. 비밀 값은 GitHub Secrets. 배포할 때는 Docker 이미지를 만들어 파일(tar)로 내려받을 수 있게 한다(3.1절) |

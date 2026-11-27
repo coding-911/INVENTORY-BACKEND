@@ -1,7 +1,7 @@
 # 개발 컨벤션
 
 > 원본(노션): https://app.notion.com/p/c9a23b67b2234b118a564059d27fcce2  
-> 내보낸 날짜: 2026-11-24. **노션이 원본이다.** 이 파일과 노션이 다르면 노션을 따른다.
+> 내보낸 날짜: 2026-11-27. **노션이 원본이다.** 이 파일과 노션이 다르면 노션을 따른다.
 
 > 📐 백엔드 코드를 쓸 때 지키는 규칙이다 (2026-11-24). 쓰는 기술과 버전은 [백엔드 기술 스택](https://app.notion.com/p/422b82ca31e58168bf53c6862f5c4c07), 패키지·모듈 구조와 이름 규칙은 [디렉토리 구조](https://app.notion.com/p/408b82ca31e5802da847f03723e75a89) 4·8절, API 모양은 [API 명세서](https://app.notion.com/p/408b82ca31e580d19b7ee382dacd572b) 1절을 본다.
 
@@ -35,7 +35,7 @@
 | 다른 객체 가리키기 | `common` | `Ref(id, label)`, 또는 모듈별 `CategoryRef(id, code, name)` | 다른 객체는 `{id, 코드 또는 이름}`만 (API 명세서 3절) |
 | 모듈 간 | `{모듈}/api/dto` | `StockMovementRequest`, `StockSnapshot` | 다른 모듈이 부르는 인터페이스용. 웹 요청·응답 객체와 섞지 않는다(디렉토리 구조 4절) |
 
-**금액 필드**: `COST_VIEW` 권한이 없으면 필드 자체가 없어야 한다(INV-83). 금액 없는 응답과 금액 있는 응답을 따로 두고(예: `TradeLineResponse` / `TradeLineWithPriceResponse`), 서비스가 권한을 보고 고른다. null로 채워 보내지 않는다.
+**금액 필드**: `COST_VIEW` 권한이 없으면 필드 자체가 없어야 한다(INV-83). 금액 없는 응답과 금액 있는 응답을 따로 두고(예: `TradeLineResponse` / `TradeLineWithPriceResponse`), 서비스가 권한을 보고 고른다. null로 채워 보내지 않는다. OpenAPI에서는 금액 필드를 필수로 표시하지 않는다. 프론트가 자동 생성한 타입에서 "없을 수도 있음"으로 받기 위해서다(프론트엔드 개발 컨벤션 3절).
 
 **MapStruct 사용 범위**
 
@@ -92,7 +92,7 @@ interface ProductMapper {
 
 ## 7. 오류 처리
 
-- 업무 규칙 위반은 `BusinessException(ErrorCode, details)`을 던진다. `ErrorCode`는 enum 하나에 HTTP 상태와 기본 메시지를 함께 둔다(API 명세서 1.4).
+- 업무 규칙 위반은 `BusinessException(ErrorCode, details)`을 던진다. `ErrorCode`는 enum 하나에 HTTP 상태와 기본 메시지를 함께 둔다(API 명세서 1.4). 프론트가 오류 문구 표를 만들 수 있게 ErrorCode 목록을 내보낸다(에러 코드 정의서, 프론트엔드 개발 컨벤션 6절).
 - 응답은 공통 예외 처리기(`@RestControllerAdvice`) 한 곳에서 만든다. 컨트롤러에서 try-catch로 응답을 만들지 않는다.
 - DB 제약 위반(유니크·CHECK)은 제약 이름으로 오류 코드에 연결한다(예: `ux_products_item_code` → `PRODUCT_ITEM_CODE_DUPLICATE`). 제약 이름은 DDL 세 파일에서 같다.
 - 예상하지 못한 오류는 500 `INTERNAL_ERROR`와 traceId만 돌려주고, 상세는 로그에만 남긴다.
