@@ -1,7 +1,7 @@
 # 테이블 정의서
 
 > 원본(노션): https://app.notion.com/p/408b82ca31e58080bd5deb903f3026c6  
-> 내보낸 날짜: 2026-11-24. **노션이 원본이다.** 이 파일과 노션이 다르면 노션을 따른다.
+> 내보낸 날짜: 2026-11-26. **노션이 원본이다.** 이 파일과 노션이 다르면 노션을 따른다.
 
 > 🗄️ PostgreSQL 기준 테이블 정의. 근거: [요구사항 정의서](https://app.notion.com/p/408b82ca31e58037816bdbd3754b6bab) 6.1절 기존 설계 객체, [재고 원장 처리 규칙](https://app.notion.com/p/53340b01efa54f16a6217503509ca182), [디렉토리 구조](https://app.notion.com/p/408b82ca31e5802da847f03723e75a89), 기술적 의사 결정 기록.
 
@@ -99,7 +99,7 @@
 | is_active | boolean | N | 기본 true | 퇴사·비활성 |
 | last_login_at | timestamptz | Y |  |  |
 | role_id | uuid | N | FK roles | 역할 하나 (2026-11-26 추가, #106). 바꾸면 tokens_valid_after를 기록한다 |
-| must_change_password | boolean | N | 기본 false | 다음 로그인 때 비밀번호 변경 필요. 관리자가 계정을 만들거나 비밀번호를 초기화하면 true, 본인이 바꾸면 false. true인 동안은 내 정보·비밀번호 변경·로그아웃만 가능 (2026-11-23 추가, #100) |
+| must_change_password | boolean | N | 기본 false | 다음 로그인 때 비밀번호 변경 필요. `USER_MANAGE` 권한자가 계정을 만들거나 비밀번호를 초기화하면 true, 본인이 바꾸면 false. true인 동안은 내 정보·비밀번호 변경·로그아웃만 가능 (2026-11-23 추가, #100) |
 | tokens_valid_after | timestamptz | Y |  | 세션 무효 기준 시각. 역할·사용 여부·로그인 ID·비밀번호를 바꾸면 지금으로 기록한다. 이보다 먼저 로그인한 세션은 끊는다. 이름은 토큰 방식 때 지은 것을 그대로 둔다 (2026-11-23, 2026-11-25 세션 방식으로 바꿈, API 명세서 1.3절) |
 | [DEL] |  |  |  | 소프트 삭제 (2026-11-23 추가, API 명세서 1.9절) |
 | [AUD] |  |  |  |  |
@@ -156,7 +156,7 @@
 | specification | text | Y |  | 규격·설명 |
 | unit | varchar(20) | N | 기본 EA |  |
 | serial_managed | boolean | N | 기본 false | 시리얼 관리 여부 (PROD-05). 이력이 생긴 뒤에는 변경 불가 |
-| is_active | boolean | N | 기본 true | 이력 있는 제품은 삭제 대신 비활성 (PROD-04). 사용 중지·다시 사용은 관리자, 재고·미처리 문서 품목·활성 배정·대차 잔량이 남으면 차단 (트랜잭션 검증, #78) |
+| is_active | boolean | N | 기본 true | 이력 있는 제품은 삭제 대신 비활성 (PROD-04). 사용 중지·다시 사용은 `MASTER_MANAGE`, 재고·미처리 문서 품목·활성 배정·대차 잔량이 남으면 차단 (트랜잭션 검증, #78) |
 | [DEL] |  |  |  | 소프트 삭제 (2026-11-23 추가). 이력 없는 제품만 삭제 (#78, API 명세서 1.9절) |
 | note | text | Y |  |  |
 | [AUD] |  |  |  |  |
@@ -165,7 +165,7 @@
 
 | 컬럼 | 설명 |
 |---|---|
-| id, product_id FK products, field_name varchar(50), old_value text Y, new_value text Y, reason Y, changed_by, changed_at | 제품 변경 이력. trade_document_changes·loan_document_changes와 같은 일반형. 이력 있는 제품의 Item Code 변경(관리자, 사유 필수), 사용 중지·다시 사용을 항목마다 한 줄로 남긴다 (확정 사항 #78, ISS-14). 지난 원장의 제품 스냅샷은 바꾸지 않는다 |
+| id, product_id FK products, field_name varchar(50), old_value text Y, new_value text Y, reason Y, changed_by, changed_at | 제품 변경 이력. trade_document_changes·loan_document_changes와 같은 일반형. 이력 있는 제품의 Item Code 변경(`RECORD_CORRECT`, 사유 필수), 사용 중지·다시 사용을 항목마다 한 줄로 남긴다 (확정 사항 #78, ISS-14). 지난 원장의 제품 스냅샷은 바꾸지 않는다 |
 
 ### 3.5 product.bundles / bundle_components — 구성 묶음
 
@@ -234,7 +234,7 @@
 | reason_code | varchar(30) | Y |  | OVER_RECEIPT, MIS_SHIPMENT, FREE_REPLACEMENT, SAMPLE, COUNT_DIFF, DISPOSAL 등. 해당 유형에서 필수 |
 | reason | text | Y |  | 상세 사유 |
 | reference_no | varchar(100) | Y |  | 외부 문서번호 |
-| approved_by / approved_at | uuid / timestamptz | Y |  | 관리자 승인이 필요한 유형(폐기, 대여 출고, 실사 조정, 마감 예외) |
+| approved_by / approved_at | uuid / timestamptz | Y |  | 승인(`APPROVE`)이 필요한 유형(폐기, 대여 출고, 실사 조정, 마감 예외) |
 | note | text | Y |  | 예: 수령 거부 메모 |
 | created_at / created_by | timestamptz / uuid | N |  |  |
 | posted_at / posted_by | timestamptz / uuid | Y |  | 확정 시각·확정자 |
@@ -289,7 +289,7 @@ UNIQUE NULLS NOT DISTINCT (product_id, location_id, stock_condition, owner_type,
 | 테이블 | 컬럼 | 설명 |
 |---|---|---|
 | period_closings | id, period char(7) UNIQUE ('YYYY-MM'), status CHECK IN ('OPEN','CLOSED'), closed_at, closed_by, snapshot_version integer | 월별 마감 상태. CLOSED 기간의 업무 날짜로는 처리 불가 |
-| period_closing_events | id, period, action CHECK IN ('CLOSE','REOPEN'), reason, acted_by, acted_at | 마감·해제 이력. 해제는 관리자, 사유 필수 |
+| period_closing_events | id, period, action CHECK IN ('CLOSE','REOPEN'), reason, acted_by, acted_at | 마감·해제 이력. 해제는 `CLOSING`, 사유 필수 |
 | monthly_stock_snapshots | id, period, snapshot_version, product_id, location_id, stock_condition, owner_type, owner_partner_id, quantity | 마감 시점 월말 재고. 재마감 시 버전 증가, 이전 버전 보관 |
 
 ### 4.5 재고 실사 — stock_counts / stock_count_scopes / stock_count_lines / stock_count_serials
@@ -377,10 +377,10 @@ UNIQUE NULLS NOT DISTINCT (product_id, location_id, stock_condition, owner_type,
 | line_no | integer | N | UNIQUE(document_id, line_no) |  |
 | product_id | uuid | N | FK products | 처리 수량이 0일 때만 변경 가능 |
 | quantity | integer | N | CHECK > 0 | 문서 수량 |
-| opening_fulfilled_quantity | integer | N | 기본 0, CHECK >= 0 | 기준일 이전 처리 수량. 기준일 전에 이미 입고·직납(매입) 또는 납품(매출)된 수량. 관리자만, 첫 월 마감 전까지 입력·변경 (확정 사항 #48·#49) |
+| opening_fulfilled_quantity | integer | N | 기본 0, CHECK >= 0 | 기준일 이전 처리 수량. 기준일 전에 이미 입고·직납(매입) 또는 납품(매출)된 수량. `STOCK_ADJUST`만, 첫 월 마감 전까지 입력·변경 (확정 사항 #48·#49) |
 | fulfilled_quantity | integer | N | 기본 0 | 처리된 수량. 매입: 입고+직납, 매출: 유효 납품(납품−반품). 원장·납품과 같은 트랜잭션에서 갱신 |
 | closed_quantity | integer | N | 기본 0 | 잔량 마감으로 종결한 수량 |
-| closed_reason / closed_by / closed_at | text / uuid / timestamptz | Y |  | 잔량 마감 정보 (관리자) |
+| closed_reason / closed_by / closed_at | text / uuid / timestamptz | Y |  | 잔량 마감 정보 (`CLOSING`) |
 | route | varchar(20) | N | CHECK IN ('WAREHOUSE','DIRECT') | 창고 경유 / 현장 직납 |
 | note | text | Y |  |  |
 | [AUD] |  |  |  |  |
@@ -432,17 +432,17 @@ CHECK (opening_fulfilled_quantity + fulfilled_quantity + closed_quantity \<= qua
 | direction | varchar(10) | N | CHECK IN ('IN','OUT') | 차입 / 대여 |
 | partner_id | uuid | N | FK partners | 차입처·대여처 |
 | project_id | uuid | Y | FK projects | 차입하게 된 프로젝트 (참조용, 실제 사용 프로젝트는 출고 기록으로 연결) |
-| settlement_method | varchar(20) | N | CHECK IN ('IN_KIND','CONVERT','RETURN_ORIGINAL') | ① 현물 / ② 거래 전환 / ③ 원물 반환. 정산 전까지 관리자가 변경 가능 |
+| settlement_method | varchar(20) | N | CHECK IN ('IN_KIND','CONVERT','RETURN_ORIGINAL') | ① 현물 / ② 거래 전환 / ③ 원물 반환. 정산 전까지 `RECORD_CORRECT` 권한자가 변경 가능 |
 | due_date | date | Y |  | 상환·회수 기한. 지나면 경고 |
 | status | varchar(20) | N | CHECK IN ('OPEN','SETTLED','CANCELLED') |  |
 | converted_trade_document_id | uuid | Y | FK trade_documents | ② 거래 전환 시 생성한 매입·매출 문서 |
-| approved_by / approved_at | uuid / timestamptz | Y |  | 대여 출고 관리자 승인 |
+| approved_by / approved_at | uuid / timestamptz | Y |  | 대여 출고 승인(`APPROVE`) |
 | note, [AUD], [DEL] |  |  |  |  |
 
 | 테이블 | 컬럼 | 설명 |
 |---|---|---|
 | loan_lines | id, loan_id FK, line_no, product_id, quantity CHECK > 0, moved_quantity 기본 0 (받은(차입)·내보낸(대여) 수량, CHECK 0 ≤ moved ≤ quantity, #89, 2026-11-23 추가), settled_quantity 기본 0, equipment_id Y, note. CHECK (settled_quantity \<= quantity) | 차입 잔량·대여 잔량 = quantity − settled_quantity. settled_quantity = 확정된 정산 기록 합계(점검 C13). 정산한 실제 제품 칸(settled_product_id)은 2026-11-23 loan_settlements로 옮김 |
-| loan_settlements (2026-11-23 추가) | id, loan_line_id FK, settled_date, method CHECK IN ('IN_KIND','CONVERT','RETURN_ORIGINAL'), quantity CHECK > 0, settled_product_id FK products, equipment_id Y FK, status CHECK IN ('PENDING_APPROVAL','POSTED','REJECTED','CANCELLED') 기본 POSTED, transaction_id Y FK stock_transactions, trade_document_id Y FK trade_documents, note, [AUD]. CHECK (CONVERT면 trade_document_id 필수, 장비가 있으면 수량 1) | 대차 정산 기록. 정산할 때마다 한 줄이라 나눠서 정산할 수 있다. settled_product_id는 실제로 주고받은 제품(같은 모델이면 대차 품목과 같음). 동급 모델이면 PENDING_APPROVAL로 만들고 관리자가 승인하면 POSTED, 반려하면 REJECTED (#40, review_requests). 재고가 움직이면 그 처리 묶음, 전환이면 만든 거래 문서를 연결. 그 처리 묶음을 취소하면 CANCELLED |
+| loan_settlements (2026-11-23 추가) | id, loan_line_id FK, settled_date, method CHECK IN ('IN_KIND','CONVERT','RETURN_ORIGINAL'), quantity CHECK > 0, settled_product_id FK products, equipment_id Y FK, status CHECK IN ('PENDING_APPROVAL','POSTED','REJECTED','CANCELLED') 기본 POSTED, transaction_id Y FK stock_transactions, trade_document_id Y FK trade_documents, note, [AUD]. CHECK (CONVERT면 trade_document_id 필수, 장비가 있으면 수량 1) | 대차 정산 기록. 정산할 때마다 한 줄이라 나눠서 정산할 수 있다. settled_product_id는 실제로 주고받은 제품(같은 모델이면 대차 품목과 같음). 동급 모델이면 PENDING_APPROVAL로 만들고 `APPROVE` 권한자가 승인하면 POSTED, 반려하면 REJECTED (#40, review_requests). 재고가 움직이면 그 처리 묶음, 전환이면 만든 거래 문서를 연결. 그 처리 묶음을 취소하면 CANCELLED |
 | loan_document_changes | id, loan_id FK, line_id FK Y, field_name, old_value Y, new_value Y, reason, changed_by, changed_at | 대차 문서 변경 이력. trade_document_changes와 같은 일반형. 정산 방식(#42)·기한(#72) 등 바뀐 항목마다 한 줄. 2026-11-03 loan_method_changes에서 바꿈 |
 
 ### 5.10 trash.trash_events — 삭제·복구 이력
@@ -457,12 +457,12 @@ CHECK (opening_fulfilled_quantity + fulfilled_quantity + closed_quantity \<= qua
 
 | 테이블 | 컬럼 | 설명 |
 |---|---|---|
-| line_prices | trade_line_id PK·FK, unit_price numeric(19,4), currency char(3) FK currencies (기본 KRW), exchange_rate numeric(18,6) (기본 1), exchange_rate_date date Y, unit_price_krw numeric(19,4), tax_type Y, [AUD] | 거래 품목별 매입 단가·판매 단가 (COST-01). 변경 이력은 cost_changes (2026-11-23 변경, #91). 비우기는 행 삭제(#92). 완료 문서도 금액 수정 권한자가 고칠 수 있고 취소 문서는 불가, 월 마감과 무관 (#73) |
+| line_prices | trade_line_id PK·FK, unit_price numeric(19,4), currency char(3) FK currencies (기본 KRW), exchange_rate numeric(18,6) (기본 1), exchange_rate_date date Y, unit_price_krw numeric(19,4), tax_type Y, [AUD] | 거래 품목별 매입 단가·판매 단가 (COST-01). 변경 이력은 cost_changes (2026-11-23 변경, #91). 비우기는 행 삭제(#92). 완료 문서도 고칠 수 있고 취소 문서는 불가(#73). 귀속월이 마감되면 바꾸거나 비울 수 없다(#103) |
 | extra_costs | id, project_id FK, cost_type CHECK IN ('SHIPPING','INSTALL','RENTAL','OTHER'), amount numeric(20,4) (2026-11-26, V4), currency FK currencies (기본 KRW), exchange_rate numeric(18,6) (기본 1), exchange_rate_date Y, amount_krw numeric(18,2), cost_date, trade_document_id Y, loan_document_id Y, note, [AUD], [DEL]. CHECK (cost_type \<> 'RENTAL' OR loan_document_id IS NOT NULL) (2026-11-23 추가) | 운송·설치비, 차입 대여료 등 부대비용 (COST-03). 소프트 삭제(#92), 대여료는 차입 대차 필수(INV-82). RENTAL은 차입 대차 문서(loan_document_id) 연결 필수이고 실제 쓴 프로젝트마다 한 줄, 다른 임차료는 OTHER (#74, INV-68) |
 | loan_fees | loan_document_id PK·FK, amount numeric(20,4) (2026-11-26, V4), currency FK currencies (기본 KRW), exchange_rate numeric(18,6) (기본 1), exchange_rate_date Y, amount_krw numeric(18,2), [AUD] | 대여 방향 대차 문서의 대여료(수익). 프로젝트 마진에 넣지 않음. 차입 대여료는 extra_costs의 RENTAL로 기록 (#74, INV-68) |
-| opening_costs (2026-11-09 추가) | ledger_entry_id PK·FK ledger_entries, unit_cost numeric(19,4) CHECK >= 0, currency FK currencies (기본 KRW), exchange_rate numeric(18,6) (기본 1), exchange_rate_date Y, unit_cost_krw numeric(19,4), note(평가 근거) Y, [AUD] | 초기 재고 단가. 초기 재고(OPENING) 원장 행마다 선택해서 넣는 평가 단가로, 이동평균의 출발점이 된다. 넣지 않은 재고가 나가면 원가 미확인. 관리자이면서 금액 수정 권한이 있는 사람만 입력. OPENING 행인지는 트랜잭션 검증 (#81, INV-74) |
+| opening_costs (2026-11-09 추가) | ledger_entry_id PK·FK ledger_entries, unit_cost numeric(19,4) CHECK >= 0, currency FK currencies (기본 KRW), exchange_rate numeric(18,6) (기본 1), exchange_rate_date Y, unit_cost_krw numeric(19,4), note(평가 근거) Y, [AUD] | 초기 재고 단가. 초기 재고(OPENING) 원장 행마다 선택해서 넣는 평가 단가로, 이동평균의 출발점이 된다. 넣지 않은 재고가 나가면 원가 미확인. `STOCK_ADJUST` 그리고 `COST_EDIT` 권한자만 입력(INV-74). OPENING 행인지는 트랜잭션 검증 (#81, INV-74) |
 | currencies | code char(3) PK (ISO 4217), name, minor_unit smallint (표시·반올림 자리수), is_active boolean | 통화 목록. 초기값 KRW(minor_unit 0, 활성), USD(minor_unit 2, 비활성). 비활성 통화는 입력 불가 |
-| cost_changes | id, target_type CHECK IN ('LINE_PRICE','EXTRA_COST','LOAN_FEE','OPENING_COST'), target_id uuid, field_name, old_value text Y, new_value text Y, reason Y, changed_by, changed_at. 인덱스 (target_type, target_id) | 금액 변경 이력 (2026-11-23 추가, #91, INV-83). 넣기·바꾸기·비우기·삭제를 같은 트랜잭션에서 남긴다. 대상은 여러 테이블이라 FK 없이 target_type·target_id로 가리킨다. 금액 보기 권한자만 조회 |
+| cost_changes | id, target_type CHECK IN ('LINE_PRICE','EXTRA_COST','LOAN_FEE','OPENING_COST'), target_id uuid, field_name, old_value text Y, new_value text Y, reason Y, changed_by, changed_at. 인덱스 (target_type, target_id) | 금액 변경 이력 (2026-11-23 추가, #91, INV-83). 넣기·바꾸기·비우기·삭제를 같은 트랜잭션에서 남긴다. 대상은 여러 테이블이라 FK 없이 target_type·target_id로 가리킨다. `COST_VIEW` 권한자만 조회 |
 
 **금액 귀속월과 마감 (2026-11-23, #103·INV-85):** 네 금액 테이블에 attribution_basis varchar(20) NOT NULL과 attribution_date date Y를 둔다. 기준값: line_prices DOCUMENT_DATE(기본)·FULFILLED_DATE·MANUAL, extra_costs COST_DATE(기본)·MANUAL, loan_fees SETTLED_DATE(기본)·DUE_DATE·MANUAL, opening_costs CUTOVER_DATE(기본)·MANUAL. CHECK ((attribution_basis = 'MANUAL') = (attribution_date IS NOT NULL)). 귀속월이 마감되면 금액을 바꾸거나 비울 수 없고, 비어 있는 단가를 처음 넣는 것만 허용.
 
@@ -495,8 +495,8 @@ PDF 읽기(import_jobs: 추출 결과 확인 후 작성 중 문서로 저장)는
 
 | 테이블 | 컬럼 | 설명 |
 |---|---|---|
-| review_requests | id, request_type CHECK IN (승인: 'DISPOSAL','LOAN_OUT','EQUIVALENT_SETTLEMENT','COUNT_DIFFERENCE' / 확인: 'UNPLANNED_RECEIPT','SERIAL_CHANGE','LOAN_DUE_CHANGE'), target_type, target_id, status CHECK IN ('PENDING','APPROVED','REJECTED','CONFIRMED') 기본 PENDING, summary Y, requested_by, requested_at, decided_by Y, decided_at Y, decision_reason Y, version. 부분 유니크 (request_type, target_type, target_id) WHERE status = 'PENDING' | 승인·확인 요청. 승인·확인 대기함(O1)의 원본. 승인 종류는 APPROVED·REJECTED로, 확인 종류는 CONFIRMED로만 끝난다(CHECK). 처리하면 처리자·시각 필수, 반려는 사유 필수 (#61). 같은 대상에 대기 중 요청은 하나 |
-| notifications | id, recipient_user_id, notification_type CHECK IN ('REVIEW_REJECTED','INTEGRITY_ALERT','ALLOCATION_RELEASED','WARRANTY_EXPIRING'), title, message Y, target_type Y, target_id Y, created_at, read_at Y. INDEX (recipient_user_id, read_at) | 알림. 반려하면 요청자에게(실사 차이는 실사 담당자에게, #61), 정합성 점검에서 어긋난 것이 나오면 관리자마다 한 줄 (O5) |
+| review_requests | id, request_type CHECK IN (승인: 'DISPOSAL','LOAN_OUT','EQUIVALENT_SETTLEMENT','COUNT_DIFFERENCE' / 확인: 'UNPLANNED_RECEIPT','SERIAL_CHANGE','LOAN_DUE_CHANGE'), target_type, target_id, status CHECK IN ('PENDING','APPROVED','REJECTED','CONFIRMED') 기본 PENDING, summary Y, requested_by, requested_at, decided_by Y, decided_at Y, decision_reason Y, version. 부분 유니크 (request_type, target_type, target_id) WHERE status = 'PENDING' | 승인·확인 요청. 승인·확인 대기함(O1)의 원본. 승인 종류는 APPROVED·REJECTED로, 확인 종류는 CONFIRMED로만 끝난다(CHECK). 처리하면 처리자·시각 필수, 반려는 사유 필수 (#61). 같은 대상에 대기 중 요청은 하나. 확인 종류는 대기 중 요청이 있으면 새로 만들지 않고 그 요청을 그대로 둔다(INV-77) |
+| notifications | id, recipient_user_id, notification_type CHECK IN ('REVIEW_REJECTED','INTEGRITY_ALERT','ALLOCATION_RELEASED','WARRANTY_EXPIRING'), title, message Y, target_type Y, target_id Y, created_at, read_at Y. INDEX (recipient_user_id, read_at) | 알림. 반려하면 요청자에게(실사 차이는 실사 담당자에게, #61), 정합성 점검에서 어긋난 것이 나오거나 첨부 파일이 디스크에 없으면 `AUDIT_VIEW` 권한자마다 한 줄(INTEGRITY_ALERT, O5), 보증 만료 30일 전이면 `STOCK_OPERATE` 권한자마다 한 줄(WARRANTY_EXPIRING, #95) |
 | integrity_check_results | id, check_code (C1~C15), target_type, target_key varchar(200), detail jsonb, first_found_at, last_found_at, resolved_at Y. 부분 유니크 (check_code, target_type, target_key) WHERE resolved_at IS NULL | 정합성 점검 결과. 어긋남을 찾으면 행을 만들고(이미 열린 행이 있으면 last_found_at만 갱신), 다음 점검에서 다시 나오지 않으면 resolved_at을 채운다. 열린 행이 있으면 월 마감 차단 (O5). 대상 키는 재고 키처럼 여러 값일 수 있어 문자열로 둔다 |
 
 - review_requests의 대상(느슨한 참조, 외래 키 없음): 폐기 → stock_transactions(DRAFT), 대여 출고 → loan_documents, 동급 정산 → loan_settlements, 실사 차이 → stock_counts, 발주 외 입고 → stock_transactions, 시리얼 수정 → equipment_events, 기한 변경 → loan_document_changes.
@@ -540,7 +540,7 @@ stock_transactions.source_type/source_id ──> 업무 모듈 (느슨한 참조
 
 | 이슈 | 영향 테이블·컬럼 | 현재 가정 |
 |---|---|---|
-| ISS-1 권한 | auth.permissions, roles, role_permissions | 2026-11-26: 권한 13개 + 관리자가 만드는 역할, 기본 역할 6개(#106). 승인 범위가 정해지면 권한을 나눌 수 있다 |
+| ISS-1 권한 | auth.permissions, roles, role_permissions | 2026-11-26: 권한 13개 + `USER_MANAGE` 권한자가 만드는 역할, 기본 역할 6개(#106). 승인 범위가 정해지면 권한을 나눌 수 있다 |
 | ISS-2 시리얼 범위 | equipment.serial_no 유니크 범위 | 제품별 유니크, 미확인은 NULL |
 | ISS-3 보증 기준 | warranties.basis, 만료 알림 테이블 | 2026-11-23 확정(#95): basis CHECK IN ('DELIVERY','MANUFACTURER','PURCHASE','MANUAL'), 만료 30일 전 알림 WARRANTY_EXPIRING |
 | ISS-4·16 금액 산식·원가 | cost 스키마 전체, 원가 계산 결과 테이블 | 단가·부대비용 저장, 통화·환율 컬럼 준비 (KRW 기본값). 원가·마진 산식과 초기 재고 단가(opening_costs)는 확정(#79–#81), 계산 결과 테이블은 두지 않음. 환율 기준일·출처와 금액 마감은 외화 사용 시 결정 |
